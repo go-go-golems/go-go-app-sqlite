@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  SQLITE_HYPERCARD_EXAMPLE_CARD_ACTION,
+  SQLITE_HYPERCARD_EXAMPLE_CARD_NOTE,
+} from '../domain/hypercard/exampleCard';
+import {
+  SQLITE_HYPERCARD_QUERY_INTENT,
+  type SqliteQueryIntentPayload,
+  type SqliteQueryIntentResult,
+} from '../domain/hypercard/intentContract';
+import { handleSqliteQueryIntent } from '../domain/hypercard/runtimeHandlers';
 
 export interface SqliteWorkspaceWindowProps {
   apiBasePrefix: string;
@@ -136,6 +146,7 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
   const [paramsEditorText, setParamsEditorText] = useState<string>('[]');
 
   const [queryResponse, setQueryResponse] = useState<QueryResponse | null>(null);
+  const [lastIntentResult, setLastIntentResult] = useState<SqliteQueryIntentResult | null>(null);
   const [uiError, setUIError] = useState<UIErrorState | null>(null);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [activeRequestId, setActiveRequestId] = useState<string>('');
@@ -200,50 +211,68 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     void loadSavedQueries();
   }, [loadSavedQueries]);
 
+  const buildQueryPayloadsFromEditor = useCallback(
+    (): { queryRequest: QueryRequest; intentPayload: SqliteQueryIntentPayload } | null => {
+      const trimmedSQL = sqlText.trim();
+      if (!trimmedSQL) {
+        setUIError({ category: 'validation', message: 'SQL text is required.' });
+        return null;
+      }
+
+      const queryRequest: QueryRequest = { sql: trimmedSQL };
+      const intentPayload: SqliteQueryIntentPayload = { sql: trimmedSQL };
+      const parsedRowLimit = rowLimitInput.trim() === '' ? null : Number(rowLimitInput.trim());
+      if (parsedRowLimit !== null) {
+        if (!Number.isFinite(parsedRowLimit) || parsedRowLimit <= 0) {
+          setUIError({ category: 'validation', message: 'Row limit must be a positive number.' });
+          return null;
+        }
+        const normalizedLimit = Math.floor(parsedRowLimit);
+        queryRequest.row_limit = normalizedLimit;
+        intentPayload.rowLimit = normalizedLimit;
+      }
+
+      try {
+        if (parameterMode === 'positional') {
+          const parsed = JSON.parse(paramsEditorText || '[]') as unknown;
+          if (!Array.isArray(parsed)) {
+            throw new Error('Positional parameters must be a JSON array.');
+          }
+          if (parsed.length > 0) {
+            queryRequest.positional_params = parsed;
+            intentPayload.positionalParams = parsed;
+          }
+        }
+        if (parameterMode === 'named') {
+          const parsed = JSON.parse(paramsEditorText || '{}') as unknown;
+          if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
+            throw new Error('Named parameters must be a JSON object.');
+          }
+          const named = parsed as Record<string, unknown>;
+          if (Object.keys(named).length > 0) {
+            queryRequest.named_params = named;
+            intentPayload.namedParams = named;
+          }
+        }
+      } catch (error) {
+        setUIError({
+          category: 'validation',
+          message: error instanceof Error ? error.message : 'Failed to parse parameter JSON.',
+        });
+        return null;
+      }
+
+      return { queryRequest, intentPayload };
+    },
+    [parameterMode, paramsEditorText, rowLimitInput, sqlText],
+  );
+
   const executeQuery = useCallback(async () => {
-    const trimmedSQL = sqlText.trim();
-    if (!trimmedSQL) {
-      setUIError({ category: 'validation', message: 'SQL text is required.' });
+    const payloads = buildQueryPayloadsFromEditor();
+    if (!payloads) {
       return;
     }
-
-    const request: QueryRequest = { sql: trimmedSQL };
-    const parsedRowLimit = rowLimitInput.trim() === '' ? null : Number(rowLimitInput.trim());
-    if (parsedRowLimit !== null) {
-      if (!Number.isFinite(parsedRowLimit) || parsedRowLimit <= 0) {
-        setUIError({ category: 'validation', message: 'Row limit must be a positive number.' });
-        return;
-      }
-      request.row_limit = Math.floor(parsedRowLimit);
-    }
-
-    try {
-      if (parameterMode === 'positional') {
-        const parsed = JSON.parse(paramsEditorText || '[]') as unknown;
-        if (!Array.isArray(parsed)) {
-          throw new Error('Positional parameters must be a JSON array.');
-        }
-        if (parsed.length > 0) {
-          request.positional_params = parsed;
-        }
-      }
-      if (parameterMode === 'named') {
-        const parsed = JSON.parse(paramsEditorText || '{}') as unknown;
-        if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-          throw new Error('Named parameters must be a JSON object.');
-        }
-        const named = parsed as Record<string, unknown>;
-        if (Object.keys(named).length > 0) {
-          request.named_params = named;
-        }
-      }
-    } catch (error) {
-      setUIError({
-        category: 'validation',
-        message: error instanceof Error ? error.message : 'Failed to parse parameter JSON.',
-      });
-      return;
-    }
+    const request = payloads.queryRequest;
 
     if (abortController) {
       abortController.abort();
@@ -293,7 +322,67 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       setIsExecuting(false);
       setAbortController(null);
     }
-  }, [abortController, loadHistory, parameterMode, paramsEditorText, resolvedApiBase, rowLimitInput, sqlText]);
+  }, [abortController, buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
+
+  const executeViaIntentBridge = useCallback(async () => {
+    const payloads = buildQueryPayloadsFromEditor();
+    if (!payloads) {
+      return;
+    }
+    if (abortController) {
+      abortController.abort();
+    }
+
+    setAbortController(null);
+    setIsExecuting(true);
+    setUIError(null);
+    setActiveRequestId(`intent-ui-${Date.now()}`);
+
+    try {
+      const result = await handleSqliteQueryIntent(
+        {
+          apiBasePrefix: resolvedApiBase,
+        },
+        payloads.intentPayload,
+      );
+      setLastIntentResult(result);
+      if (!result.ok) {
+        setQueryResponse(null);
+        setUIError({
+          category: result.error.category,
+          message: result.error.message,
+          correlationId: result.error.correlationId,
+        });
+        return;
+      }
+
+      setQueryResponse({
+        columns: result.data.columns.map((column) => ({
+          name: column.name,
+          database_type: column.databaseType,
+          scan_type: column.scanType,
+        })),
+        rows: result.data.rows,
+        meta: {
+          correlation_id: result.data.meta.correlationId,
+          duration_ms: result.data.meta.durationMs,
+          row_count: result.data.meta.rowCount,
+          statement_type: result.data.meta.statementType,
+          truncated: result.data.meta.truncated,
+          truncated_by_row_limit: result.data.meta.truncatedByRowLimit,
+          truncated_by_payload: result.data.meta.truncatedByPayload,
+          effective_row_limit: payloads.intentPayload.rowLimit ?? 0,
+          payload_bytes: 0,
+          payload_cap_bytes: 0,
+          statement_timeout_ms: 0,
+        },
+      });
+      setUIError(null);
+      await loadHistory();
+    } finally {
+      setIsExecuting(false);
+    }
+  }, [abortController, buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
 
   const cancelExecution = useCallback(() => {
     if (abortController) {
@@ -607,6 +696,9 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
               <button type="button" style={buttonStyle} onClick={() => void executeQuery()} disabled={isExecuting}>
                 Execute Query
               </button>
+              <button type="button" style={buttonStyle} onClick={() => void executeViaIntentBridge()} disabled={isExecuting}>
+                Execute via Intent Bridge
+              </button>
               <button type="button" style={buttonStyle} onClick={resetEditor} disabled={isExecuting}>
                 Clear / Reset
               </button>
@@ -635,6 +727,18 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
             ) : (
               <span style={{ fontSize: 13, color: '#475569' }}>No query executed yet.</span>
             )}
+            {lastIntentResult ? (
+              <div style={{ borderRadius: 8, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e3a8a', padding: 10, fontSize: 12 }}>
+                <div><strong>Last Intent Result</strong></div>
+                <div>Intent: <code>{SQLITE_HYPERCARD_QUERY_INTENT}</code></div>
+                <div>
+                  Outcome:{' '}
+                  {lastIntentResult.ok
+                    ? `ok (rows=${lastIntentResult.data.meta.rowCount}, duration=${lastIntentResult.data.meta.durationMs}ms)`
+                    : `error (${lastIntentResult.error.category})`}
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section style={panelStyle}>
@@ -797,6 +901,39 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
               ))}
               {savedQueries.length === 0 ? <span style={{ fontSize: 12, color: '#64748b' }}>No saved queries yet.</span> : null}
             </div>
+          </section>
+
+          <section style={panelStyle}>
+            <strong>HyperCard Intent Contract</strong>
+            <span style={{ fontSize: 12, color: '#475569' }}>
+              Intent name: <code>{SQLITE_HYPERCARD_QUERY_INTENT}</code>
+            </span>
+            <pre
+              style={{
+                margin: 0,
+                padding: 10,
+                borderRadius: 8,
+                border: '1px solid #d6dce8',
+                background: '#f8fafc',
+                fontSize: 11,
+                overflowX: 'auto',
+              }}
+            >
+              {JSON.stringify(SQLITE_HYPERCARD_EXAMPLE_CARD_ACTION, null, 2)}
+            </pre>
+            <pre
+              style={{
+                margin: 0,
+                padding: 10,
+                borderRadius: 8,
+                border: '1px dashed #cbd5e1',
+                background: '#ffffff',
+                fontSize: 11,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {SQLITE_HYPERCARD_EXAMPLE_CARD_NOTE}
+            </pre>
           </section>
         </div>
       </div>

@@ -1,2 +1,12 @@
 export { sqliteLauncherModule } from './launcher/module';
 export { SqliteLauncherAppWindow, type SqliteLauncherAppWindowProps } from './launcher/renderSqliteApp';
+export {
+  SQLITE_HYPERCARD_QUERY_INTENT,
+  SQLITE_HYPERCARD_QUERY_INTENT_PAYLOAD_SCHEMA_REFERENCE,
+  SQLITE_HYPERCARD_QUERY_INTENT_RESULT_SCHEMA_REFERENCE,
+  type SqliteQueryIntentPayload,
+  type SqliteQueryIntentResult,
+} from './domain/hypercard/intentContract';
+export { runSqliteHypercardQueryIntent } from './domain/hypercard/intentBridge';
+export { handleSqliteQueryIntent, sqliteHypercardDomainHandlers } from './domain/hypercard/runtimeHandlers';
+export { SQLITE_HYPERCARD_EXAMPLE_CARD_ACTION, SQLITE_HYPERCARD_EXAMPLE_CARD_NOTE } from './domain/hypercard/exampleCard';
