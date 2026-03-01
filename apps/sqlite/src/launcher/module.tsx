@@ -14,28 +14,18 @@ import {
   type WindowContentAdapter,
 } from '@hypercard/engine/desktop-react';
 import { PluginCardSessionHost } from '@hypercard/hypercard-runtime';
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { ReactNode } from 'react';
+import { SqliteHypercardIntentRunner } from '../components/SqliteHypercardIntentRunner';
+import {
+  sqliteLauncherActions,
+  sqliteLauncherSlice,
+} from '../domain/hypercard/runtimeState';
 import { SQLITE_STACK } from '../domain/stack';
 import { SQLITE_WORKSPACE_INSTANCE, SqliteLauncherAppWindow } from './renderSqliteApp';
 
 const SQLITE_APP_ID = 'sqlite';
 const SQLITE_API_BASE_PREFIX_FALLBACK = '/api/apps/sqlite';
 const SQLITE_CARD_COMMAND_PREFIX = 'sqlite.card.open.';
-
-const launcherStateSlice = createSlice({
-  name: 'sqliteLauncher',
-  initialState: {
-    launchCount: 0,
-    lastLaunchReason: null as LaunchReason | null,
-  },
-  reducers: {
-    markLaunched(state, action: PayloadAction<LaunchReason>) {
-      state.launchCount += 1;
-      state.lastLaunchReason = action.payload;
-    },
-  },
-});
 
 function buildSqliteLaunchWindowPayload(reason: LaunchReason): OpenWindowPayload {
   const instanceId = SQLITE_WORKSPACE_INSTANCE;
@@ -96,7 +86,8 @@ export function buildSqliteCardWindowPayload(
   };
 }
 
-function createSqliteCardWindowAdapter(): WindowContentAdapter {
+function createSqliteCardWindowAdapter(hostContext: LauncherHostContext): WindowContentAdapter {
+  const apiBasePrefix = hostContext.resolveApiBase(SQLITE_APP_ID) || SQLITE_API_BASE_PREFIX_FALLBACK;
   return {
     id: 'sqlite.hypercard.card-adapter',
     canRender: (window: WindowInstance) =>
@@ -108,12 +99,15 @@ function createSqliteCardWindowAdapter(): WindowContentAdapter {
         return null;
       }
       return (
-        <PluginCardSessionHost
-          windowId={window.id}
-          sessionId={card.cardSessionId}
-          stack={SQLITE_STACK}
-          mode={ctx.mode}
-        />
+        <>
+          <SqliteHypercardIntentRunner apiBasePrefix={apiBasePrefix} />
+          <PluginCardSessionHost
+            windowId={window.id}
+            sessionId={card.cardSessionId}
+            stack={SQLITE_STACK}
+            mode={ctx.mode}
+          />
+        </>
       );
     },
   };
@@ -166,8 +160,35 @@ export function createSqliteContributions(hostContext: LauncherHostContext): Des
   return [
     {
       id: 'sqlite.hypercard',
+      menus: [
+        {
+          id: 'sqlite',
+          label: 'SQLite',
+          items: [
+            {
+              id: 'sqlite-open-workspace',
+              label: 'Open Workspace',
+              commandId: `icon.open.${SQLITE_APP_ID}`,
+            },
+            {
+              id: 'sqlite-open-home-card',
+              label: 'Open Card Home',
+              commandId: `${SQLITE_CARD_COMMAND_PREFIX}${SQLITE_STACK.homeCard}`,
+            },
+          ],
+        },
+        {
+          id: 'sqlite-cards',
+          label: 'SQLite Cards',
+          items: Object.keys(SQLITE_STACK.cards).map((cardId) => ({
+            id: `sqlite-open-card-${cardId}`,
+            label: `${SQLITE_STACK.cards[cardId].icon ?? ''} ${SQLITE_STACK.cards[cardId].title ?? cardId}`.trim(),
+            commandId: `${SQLITE_CARD_COMMAND_PREFIX}${cardId}`,
+          })),
+        },
+      ],
       commands: createSqliteCommandHandlers(hostContext),
-      windowContentAdapters: [createSqliteCardWindowAdapter()],
+      windowContentAdapters: [createSqliteCardWindowAdapter(hostContext)],
     },
   ];
 }
@@ -184,10 +205,10 @@ export const sqliteLauncherModule: LaunchableAppModule = {
   },
   state: {
     stateKey: 'app_sqlite',
-    reducer: launcherStateSlice.reducer,
+    reducer: sqliteLauncherSlice.reducer,
   },
   buildLaunchWindow: (ctx, reason) => {
-    ctx.dispatch(launcherStateSlice.actions.markLaunched(reason));
+    ctx.dispatch(sqliteLauncherActions.markLaunched(reason));
     return buildSqliteLaunchWindowPayload(reason);
   },
   createContributions: (ctx) => createSqliteContributions(ctx),
@@ -197,6 +218,11 @@ export const sqliteLauncherModule: LaunchableAppModule = {
       ctx.resolveWsBase?.(SQLITE_APP_ID)?.replace(/\/ws$/, '') ??
       SQLITE_API_BASE_PREFIX_FALLBACK;
 
-    return <SqliteLauncherAppWindow instanceId={instanceId} apiBasePrefix={apiBasePrefix} />;
+    return (
+      <>
+        <SqliteHypercardIntentRunner apiBasePrefix={apiBasePrefix} />
+        <SqliteLauncherAppWindow instanceId={instanceId} apiBasePrefix={apiBasePrefix} />
+      </>
+    );
   },
 };

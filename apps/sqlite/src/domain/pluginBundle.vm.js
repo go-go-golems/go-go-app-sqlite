@@ -212,6 +212,7 @@ defineStackBundle(({ ui }) => {
           const status = getStatus(globalState);
           const lastSeedAt = asString(report.completedAt);
           const queueDepth = asNumber(status.queueDepth, 0);
+          const running = asString(status.runningJobType);
           const steps = asArray(report.steps).map((step, index) => [
             String(index + 1),
             asString(asRecord(step).label, 'step'),
@@ -227,6 +228,7 @@ defineStackBundle(({ ui }) => {
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
             ui.badge(`Queue: ${queueDepth}`),
+            running ? ui.badge(`Running: ${running}`) : ui.text('Runner idle'),
             lastSeedAt ? ui.text(`Last completed: ${lastSeedAt}`) : ui.text('No seed run completed yet.'),
             steps.length > 0 ? ui.table(steps, { headers: ['#', 'Step', 'Status'] }) : ui.text('No seed report yet.'),
           ]);
