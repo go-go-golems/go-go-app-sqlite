@@ -24,6 +24,11 @@ type Config struct {
 	StatementTimeout     time.Duration
 	OpenBusyTimeoutMS    int
 	EnableMultiStatement bool
+	StatementAllowlist   []string
+	StatementDenylist    []string
+	RedactedColumns      []string
+	RateLimitRequests    int
+	RateLimitWindow      time.Duration
 }
 
 func DefaultConfig() Config {
@@ -35,6 +40,11 @@ func DefaultConfig() Config {
 		StatementTimeout:     defaultStatementTimeout,
 		OpenBusyTimeoutMS:    defaultOpenBusyTimeoutMS,
 		EnableMultiStatement: false,
+		StatementAllowlist:   nil,
+		StatementDenylist:    []string{"ATTACH", "DETACH"},
+		RedactedColumns:      nil,
+		RateLimitRequests:    60,
+		RateLimitWindow:      10 * time.Second,
 	}
 }
 
@@ -57,6 +67,15 @@ func (c Config) Normalize() Config {
 	if n.OpenBusyTimeoutMS <= 0 {
 		n.OpenBusyTimeoutMS = defaults.OpenBusyTimeoutMS
 	}
+	n.StatementAllowlist = normalizeCSVList(n.StatementAllowlist, false)
+	n.StatementDenylist = normalizeCSVList(n.StatementDenylist, true)
+	n.RedactedColumns = normalizeCSVList(n.RedactedColumns, false)
+	if n.RateLimitRequests <= 0 {
+		n.RateLimitRequests = defaults.RateLimitRequests
+	}
+	if n.RateLimitWindow <= 0 {
+		n.RateLimitWindow = defaults.RateLimitWindow
+	}
 
 	return n
 }
@@ -77,5 +96,37 @@ func (c Config) Validate() error {
 	if c.OpenBusyTimeoutMS <= 0 {
 		return errors.Errorf("sqlite config invalid busy timeout %dms; must be > 0", c.OpenBusyTimeoutMS)
 	}
+	if c.RateLimitRequests <= 0 {
+		return errors.Errorf("sqlite config invalid rate limit requests %d; must be > 0", c.RateLimitRequests)
+	}
+	if c.RateLimitWindow <= 0 {
+		return errors.Errorf("sqlite config invalid rate limit window %s; must be > 0", c.RateLimitWindow)
+	}
 	return nil
+}
+
+func normalizeCSVList(values []string, uppercase bool) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		candidate := strings.TrimSpace(value)
+		if candidate == "" {
+			continue
+		}
+		if uppercase {
+			candidate = strings.ToUpper(candidate)
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

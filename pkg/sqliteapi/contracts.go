@@ -101,7 +101,13 @@ type QueryErrorResponse struct {
 }
 
 type QueryExecutorOptions struct {
-	MaxPayloadBytes int
+	MaxPayloadBytes      int
+	StatementAllowlist   []string
+	StatementDenylist    []string
+	RedactedColumns      []string
+	RateLimitRequests    int
+	RateLimitWindow      time.Duration
+	EnableAuditLogEvents bool
 }
 
 const defaultMaxPayloadBytes = 1_048_576
@@ -110,7 +116,19 @@ func (o QueryExecutorOptions) normalize() QueryExecutorOptions {
 	if o.MaxPayloadBytes <= 0 {
 		o.MaxPayloadBytes = defaultMaxPayloadBytes
 	}
+	if o.RateLimitRequests <= 0 {
+		o.RateLimitRequests = 60
+	}
+	if o.RateLimitWindow <= 0 {
+		o.RateLimitWindow = 10 * time.Second
+	}
 	return o
+}
+
+type QueryHandlerOptions struct {
+	RateLimitRequests    int
+	RateLimitWindow      time.Duration
+	EnableAuditLogEvents bool
 }
 
 type QueryExecutionResult struct {
@@ -119,4 +137,14 @@ type QueryExecutionResult struct {
 	StatementType  string
 	TruncatedRows  bool
 	TruncatedBytes bool
+}
+
+type QueryAuditEvent struct {
+	CorrelationID string
+	Status        string
+	Category      string
+	StatementType string
+	DurationMS    int64
+	RowCount      int
+	Truncated     bool
 }

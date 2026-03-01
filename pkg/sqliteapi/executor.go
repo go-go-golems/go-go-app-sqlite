@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,13 @@ type QueryExecutor struct {
 	runtime *sqliteapp.Runtime
 	config  sqliteapp.Config
 	opts    QueryExecutorOptions
+	policy  queryPolicy
+}
+
+type queryPolicy struct {
+	statementAllowlist map[string]struct{}
+	statementDenylist  map[string]struct{}
+	redactedColumns    map[string]struct{}
 }
 
 func NewQueryExecutor(runtime *sqliteapp.Runtime, opts QueryExecutorOptions) (*QueryExecutor, error) {
@@ -27,10 +35,36 @@ func NewQueryExecutor(runtime *sqliteapp.Runtime, opts QueryExecutorOptions) (*Q
 	if err := cfg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "query executor runtime config is invalid")
 	}
+	if opts.RateLimitRequests <= 0 {
+		opts.RateLimitRequests = cfg.RateLimitRequests
+	}
+	if opts.RateLimitWindow <= 0 {
+		opts.RateLimitWindow = cfg.RateLimitWindow
+	}
+	if len(opts.StatementAllowlist) == 0 {
+		opts.StatementAllowlist = append([]string(nil), cfg.StatementAllowlist...)
+	}
+	if len(opts.StatementDenylist) == 0 {
+		opts.StatementDenylist = append([]string(nil), cfg.StatementDenylist...)
+	}
+	if len(opts.RedactedColumns) == 0 {
+		opts.RedactedColumns = append([]string(nil), cfg.RedactedColumns...)
+	}
+
+	normalizedOpts := opts.normalize()
+	allowlist := normalizedOpts.StatementAllowlist
+	denylist := normalizedOpts.StatementDenylist
+	redacted := normalizedOpts.RedactedColumns
+
 	return &QueryExecutor{
 		runtime: runtime,
 		config:  cfg,
-		opts:    opts.normalize(),
+		opts:    normalizedOpts,
+		policy: queryPolicy{
+			statementAllowlist: buildUppercaseSet(allowlist),
+			statementDenylist:  buildUppercaseSet(denylist),
+			redactedColumns:    buildLowercaseSet(redacted),
+		},
 	}, nil
 }
 
@@ -51,6 +85,9 @@ func (q *QueryExecutor) Execute(ctx context.Context, req QueryRequest, correlati
 	args := buildArgs(normalizedReq)
 	statementType := detectStatementType(normalizedReq.SQL)
 	start := time.Now()
+	if err := q.enforceStatementPolicy(statementType); err != nil {
+		return nil, err
+	}
 
 	db := q.runtime.DB()
 	if db == nil {
@@ -114,7 +151,7 @@ func (q *QueryExecutor) Execute(ctx context.Context, req QueryRequest, correlati
 			break
 		}
 
-		row, err := scanRow(columns, rows)
+		row, err := scanRow(columns, rows, q.policy.redactedColumns)
 		if err != nil {
 			return nil, classifyExecutionError(err)
 		}
@@ -216,7 +253,7 @@ func buildArgs(req QueryRequest) []any {
 	return args
 }
 
-func scanRow(columns []string, rows *sql.Rows) (map[string]any, error) {
+func scanRow(columns []string, rows *sql.Rows, redactedColumns map[string]struct{}) (map[string]any, error) {
 	values := make([]any, len(columns))
 	valueRefs := make([]any, len(columns))
 	for i := range values {
@@ -228,6 +265,10 @@ func scanRow(columns []string, rows *sql.Rows) (map[string]any, error) {
 
 	result := make(map[string]any, len(columns))
 	for i, column := range columns {
+		if _, redacted := redactedColumns[strings.ToLower(column)]; redacted {
+			result[column] = "[REDACTED]"
+			continue
+		}
 		result[column] = normalizeValue(values[i])
 	}
 	return result, nil
@@ -291,6 +332,49 @@ func isMutationStatement(statementType string) bool {
 	default:
 		return false
 	}
+}
+
+func (q *QueryExecutor) enforceStatementPolicy(statementType string) error {
+	normalized := strings.ToUpper(strings.TrimSpace(statementType))
+	if normalized == "" {
+		normalized = "UNKNOWN"
+	}
+	if _, denied := q.policy.statementDenylist[normalized]; denied {
+		return permissionError(fmt.Sprintf("statement type %q is denied by policy", normalized))
+	}
+	if len(q.policy.statementAllowlist) > 0 {
+		if _, allowed := q.policy.statementAllowlist[normalized]; !allowed {
+			return permissionError(fmt.Sprintf("statement type %q is not allowed by policy", normalized))
+		}
+	}
+	if q.config.ReadOnly && isMutationStatement(normalized) {
+		return permissionError("read-only mode blocks mutation statements")
+	}
+	return nil
+}
+
+func buildUppercaseSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, value := range values {
+		normalized := strings.ToUpper(strings.TrimSpace(value))
+		if normalized == "" {
+			continue
+		}
+		out[normalized] = struct{}{}
+	}
+	return out
+}
+
+func buildLowercaseSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, value := range values {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if normalized == "" {
+			continue
+		}
+		out[normalized] = struct{}{}
+	}
+	return out
 }
 
 func countStatements(sqlText string) int {

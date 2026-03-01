@@ -11,6 +11,7 @@ type categorizedError struct {
 	category ErrorCategory
 	message  string
 	err      error
+	status   int
 }
 
 func (e *categorizedError) Error() string {
@@ -34,8 +35,16 @@ func validationError(message string) error {
 	return &categorizedError{category: ErrorCategoryValidation, message: message}
 }
 
+func permissionError(message string) error {
+	return &categorizedError{category: ErrorCategoryPermission, message: message}
+}
+
 func executionError(err error) error {
 	return &categorizedError{category: ErrorCategoryExecution, message: "query execution failed", err: err}
+}
+
+func throttleError(message string) error {
+	return &categorizedError{category: ErrorCategoryExecution, message: message, status: 429}
 }
 
 func classifyExecutionError(err error) error {
@@ -81,6 +90,14 @@ func errorMessage(err error) string {
 }
 
 func errorStatusCode(category ErrorCategory) int {
+	return errorStatusCodeForError(category, nil)
+}
+
+func errorStatusCodeForError(category ErrorCategory, err error) int {
+	var categorized *categorizedError
+	if errors.As(err, &categorized) && categorized.status > 0 {
+		return categorized.status
+	}
 	switch category {
 	case ErrorCategoryValidation:
 		return 400

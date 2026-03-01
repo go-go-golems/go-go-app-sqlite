@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -32,9 +33,15 @@ type Component interface {
 }
 
 type Options struct {
-	Runtime         *sqliteapp.Runtime
-	Logger          *log.Logger
-	MaxPayloadBytes int
+	Runtime              *sqliteapp.Runtime
+	Logger               *log.Logger
+	MaxPayloadBytes      int
+	StatementAllowlist   []string
+	StatementDenylist    []string
+	RedactedColumns      []string
+	RateLimitRequests    int
+	RateLimitWindow      time.Duration
+	EnableAuditLogEvents bool
 }
 
 type SQLiteBackendComponent struct {
@@ -53,7 +60,13 @@ func NewSQLiteBackendComponent(opts Options) (*SQLiteBackendComponent, error) {
 	}
 
 	executor, err := sqliteapi.NewQueryExecutor(opts.Runtime, sqliteapi.QueryExecutorOptions{
-		MaxPayloadBytes: opts.MaxPayloadBytes,
+		MaxPayloadBytes:      opts.MaxPayloadBytes,
+		StatementAllowlist:   append([]string(nil), opts.StatementAllowlist...),
+		StatementDenylist:    append([]string(nil), opts.StatementDenylist...),
+		RedactedColumns:      append([]string(nil), opts.RedactedColumns...),
+		RateLimitRequests:    opts.RateLimitRequests,
+		RateLimitWindow:      opts.RateLimitWindow,
+		EnableAuditLogEvents: opts.EnableAuditLogEvents,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create sqlite query executor")

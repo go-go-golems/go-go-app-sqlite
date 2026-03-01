@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,8 @@ type QueryHandler struct {
 	executor *QueryExecutor
 	store    *MetadataStore
 	logger   *log.Logger
+	limiter  *queryRateLimiter
+	audit    bool
 }
 
 func NewQueryHandler(executor *QueryExecutor, store *MetadataStore, logger *log.Logger) (*QueryHandler, error) {
@@ -29,7 +32,21 @@ func NewQueryHandler(executor *QueryExecutor, store *MetadataStore, logger *log.
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &QueryHandler{executor: executor, store: store, logger: logger}, nil
+	rateLimitRequests := executor.opts.RateLimitRequests
+	if rateLimitRequests <= 0 {
+		rateLimitRequests = executor.config.RateLimitRequests
+	}
+	rateLimitWindow := executor.opts.RateLimitWindow
+	if rateLimitWindow <= 0 {
+		rateLimitWindow = executor.config.RateLimitWindow
+	}
+	return &QueryHandler{
+		executor: executor,
+		store:    store,
+		logger:   logger,
+		limiter:  newQueryRateLimiter(rateLimitRequests, rateLimitWindow),
+		audit:    executor.opts.EnableAuditLogEvents,
+	}, nil
 }
 
 func (h *QueryHandler) HandleQuery(w http.ResponseWriter, req *http.Request) {
@@ -52,6 +69,23 @@ func (h *QueryHandler) HandleQuery(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if h.limiter != nil && !h.limiter.Allow(time.Now()) {
+		err := throttleError("query rate limit exceeded; retry later")
+		h.logger.Printf("sqlite.query correlation_id=%s category=throttle sql_preview=%q", correlationID, previewSQL(queryRequest.SQL))
+		h.recordHistory(req.Context(), queryRequest, "error", 0, 0, err)
+		h.emitAudit(QueryAuditEvent{
+			CorrelationID: correlationID,
+			Status:        "throttled",
+			Category:      string(errorCategory(err)),
+			StatementType: detectStatementType(queryRequest.SQL),
+			DurationMS:    0,
+			RowCount:      0,
+			Truncated:     false,
+		})
+		writeCategorizedError(w, correlationID, err)
+		return
+	}
+
 	result, err := h.executor.Execute(req.Context(), queryRequest, correlationID)
 	if err != nil {
 		category := errorCategory(err)
@@ -65,6 +99,15 @@ func (h *QueryHandler) HandleQuery(w http.ResponseWriter, req *http.Request) {
 			err,
 		)
 		h.recordHistory(req.Context(), queryRequest, "error", time.Since(startedAt), 0, err)
+		h.emitAudit(QueryAuditEvent{
+			CorrelationID: correlationID,
+			Status:        "error",
+			Category:      string(category),
+			StatementType: detectStatementType(queryRequest.SQL),
+			DurationMS:    time.Since(startedAt).Milliseconds(),
+			RowCount:      0,
+			Truncated:     false,
+		})
 		writeError(w, errorStatusCode(category), QueryAPIError{
 			Category:      category,
 			Message:       message,
@@ -74,6 +117,15 @@ func (h *QueryHandler) HandleQuery(w http.ResponseWriter, req *http.Request) {
 	}
 
 	h.recordHistory(req.Context(), queryRequest, "success", result.Duration, result.Response.Meta.RowCount, nil)
+	h.emitAudit(QueryAuditEvent{
+		CorrelationID: correlationID,
+		Status:        "success",
+		Category:      "ok",
+		StatementType: result.StatementType,
+		DurationMS:    result.Response.Meta.DurationMS,
+		RowCount:      result.Response.Meta.RowCount,
+		Truncated:     result.Response.Meta.Truncated,
+	})
 	h.logger.Printf(
 		"sqlite.query correlation_id=%s category=ok statement_type=%s duration_ms=%d row_count=%d truncated=%t sql_preview=%q",
 		correlationID,
@@ -209,7 +261,7 @@ func writeError(w http.ResponseWriter, status int, errPayload QueryAPIError) {
 
 func writeCategorizedError(w http.ResponseWriter, correlationID string, err error) {
 	category := errorCategory(err)
-	writeError(w, errorStatusCode(category), QueryAPIError{
+	writeError(w, errorStatusCodeForError(category, err), QueryAPIError{
 		Category:      category,
 		Message:       errorMessage(err),
 		CorrelationID: correlationID,
@@ -263,4 +315,57 @@ func parseIntQuery(req *http.Request, key string, defaultValue, minValue, maxVal
 		return 0, validationError("query parameter " + key + " is out of range")
 	}
 	return value, nil
+}
+
+func (h *QueryHandler) emitAudit(event QueryAuditEvent) {
+	if h == nil || !h.audit {
+		return
+	}
+	h.logger.Printf(
+		"sqlite.query.audit correlation_id=%s status=%s category=%s statement_type=%s duration_ms=%d row_count=%d truncated=%t",
+		event.CorrelationID,
+		event.Status,
+		event.Category,
+		event.StatementType,
+		event.DurationMS,
+		event.RowCount,
+		event.Truncated,
+	)
+}
+
+type queryRateLimiter struct {
+	mu        sync.Mutex
+	maxEvents int
+	window    time.Duration
+	events    []time.Time
+}
+
+func newQueryRateLimiter(maxEvents int, window time.Duration) *queryRateLimiter {
+	if maxEvents <= 0 || window <= 0 {
+		return nil
+	}
+	return &queryRateLimiter{maxEvents: maxEvents, window: window, events: make([]time.Time, 0, maxEvents)}
+}
+
+func (l *queryRateLimiter) Allow(now time.Time) bool {
+	if l == nil {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cutoff := now.Add(-l.window)
+	kept := l.events[:0]
+	for _, eventAt := range l.events {
+		if eventAt.After(cutoff) {
+			kept = append(kept, eventAt)
+		}
+	}
+	l.events = kept
+
+	if len(l.events) >= l.maxEvents {
+		return false
+	}
+	l.events = append(l.events, now)
+	return true
 }

@@ -44,8 +44,14 @@ func run() error {
 	}
 
 	component, err := backendcomponent.NewSQLiteBackendComponent(backendcomponent.Options{
-		Runtime: runtime,
-		Logger:  log.Default(),
+		Runtime:              runtime,
+		Logger:               log.Default(),
+		StatementAllowlist:   cfg.SQLite.StatementAllowlist,
+		StatementDenylist:    cfg.SQLite.StatementDenylist,
+		RedactedColumns:      cfg.SQLite.RedactedColumns,
+		RateLimitRequests:    cfg.SQLite.RateLimitRequests,
+		RateLimitWindow:      cfg.SQLite.RateLimitWindow,
+		EnableAuditLogEvents: true,
 	})
 	if err != nil {
 		return errors.Wrap(err, "create sqlite backend component")
@@ -139,6 +145,15 @@ func resolveCLIConfig() (cliConfig, error) {
 	dbBusyTimeout := envInt("SQLITE_APP_DB_BUSY_TIMEOUT_MS", sqliteDefaults.OpenBusyTimeoutMS)
 	dbStatementTimeout := envDuration("SQLITE_APP_STATEMENT_TIMEOUT", sqliteDefaults.StatementTimeout)
 	enableMultiStatement := envBool("SQLITE_APP_ENABLE_MULTI_STATEMENT", sqliteDefaults.EnableMultiStatement)
+	statementAllowlist := envCSV("SQLITE_APP_STATEMENT_ALLOWLIST", sqliteDefaults.StatementAllowlist)
+	statementDenylist := envCSV("SQLITE_APP_STATEMENT_DENYLIST", sqliteDefaults.StatementDenylist)
+	redactedColumns := envCSV("SQLITE_APP_REDACT_COLUMNS", sqliteDefaults.RedactedColumns)
+	rateLimitRequests := envInt("SQLITE_APP_RATE_LIMIT_REQUESTS", sqliteDefaults.RateLimitRequests)
+	rateLimitWindow := envDuration("SQLITE_APP_RATE_LIMIT_WINDOW", sqliteDefaults.RateLimitWindow)
+
+	statementAllowlistRaw := strings.Join(statementAllowlist, ",")
+	statementDenylistRaw := strings.Join(statementDenylist, ",")
+	redactedColumnsRaw := strings.Join(redactedColumns, ",")
 
 	flag.StringVar(&listenAddr, "listen", listenAddr, "HTTP listen address")
 	flag.StringVar(&dbPath, "db-path", dbPath, "SQLite DB file path")
@@ -148,6 +163,11 @@ func resolveCLIConfig() (cliConfig, error) {
 	flag.IntVar(&dbBusyTimeout, "db-busy-timeout-ms", dbBusyTimeout, "SQLite busy timeout in milliseconds")
 	flag.DurationVar(&dbStatementTimeout, "db-statement-timeout", dbStatementTimeout, "Default SQL statement timeout")
 	flag.BoolVar(&enableMultiStatement, "enable-multi-statement", enableMultiStatement, "Allow multi-statement SQL payloads when request flag allow_multi_statement=true")
+	flag.StringVar(&statementAllowlistRaw, "statement-allowlist", statementAllowlistRaw, "Comma-separated SQL statement types to allow (empty means allow all)")
+	flag.StringVar(&statementDenylistRaw, "statement-denylist", statementDenylistRaw, "Comma-separated SQL statement types to deny")
+	flag.StringVar(&redactedColumnsRaw, "redact-columns", redactedColumnsRaw, "Comma-separated column names to redact in query responses")
+	flag.IntVar(&rateLimitRequests, "rate-limit-requests", rateLimitRequests, "Maximum query requests allowed per rate-limit window")
+	flag.DurationVar(&rateLimitWindow, "rate-limit-window", rateLimitWindow, "Rate-limit window duration")
 	flag.Parse()
 
 	sqliteConfig := sqliteapp.Config{
@@ -158,6 +178,11 @@ func resolveCLIConfig() (cliConfig, error) {
 		StatementTimeout:     dbStatementTimeout,
 		OpenBusyTimeoutMS:    dbBusyTimeout,
 		EnableMultiStatement: enableMultiStatement,
+		StatementAllowlist:   parseCSV(statementAllowlistRaw),
+		StatementDenylist:    parseCSV(statementDenylistRaw),
+		RedactedColumns:      parseCSV(redactedColumnsRaw),
+		RateLimitRequests:    rateLimitRequests,
+		RateLimitWindow:      rateLimitWindow,
 	}
 
 	sqliteConfig = sqliteConfig.Normalize()
@@ -214,6 +239,33 @@ func envDuration(key string, defaultValue time.Duration) time.Duration {
 		return defaultValue
 	}
 	return value
+}
+
+func envCSV(key string, defaultValues []string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return append([]string(nil), defaultValues...)
+	}
+	return parseCSV(raw)
+}
+
+func parseCSV(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		candidate := strings.TrimSpace(part)
+		if candidate == "" {
+			continue
+		}
+		values = append(values, candidate)
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
 }
 
 func toAbsPath(path string) string {

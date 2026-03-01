@@ -208,6 +208,87 @@ func TestQueryEndpointRowCapTruncation(t *testing.T) {
 	}
 }
 
+func TestQueryEndpointStatementDenylistPolicy(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(t, sqliteapp.Config{
+		DefaultRowLimit:   50,
+		StatementDenylist: []string{"SELECT"},
+	}, QueryExecutorOptions{})
+	seedPeopleTable(t, server.runtime)
+
+	body := mustJSON(t, QueryRequest{SQL: "SELECT id, name FROM people ORDER BY id"})
+	req := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(body))
+	res := httptest.NewRecorder()
+	server.mux.ServeHTTP(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for denied statement type, got %d body=%s", res.Code, res.Body.String())
+	}
+	var payload QueryErrorResponse
+	decodeJSON(t, res.Body.Bytes(), &payload)
+	if payload.Error.Category != ErrorCategoryPermission {
+		t.Fatalf("expected permission category, got %s", payload.Error.Category)
+	}
+}
+
+func TestQueryEndpointRedactsConfiguredColumns(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(t, sqliteapp.Config{
+		DefaultRowLimit: 50,
+		RedactedColumns: []string{"name"},
+	}, QueryExecutorOptions{})
+	seedPeopleTable(t, server.runtime)
+
+	body := mustJSON(t, QueryRequest{SQL: "SELECT id, name FROM people ORDER BY id"})
+	req := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(body))
+	res := httptest.NewRecorder()
+	server.mux.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", res.Code, res.Body.String())
+	}
+	var payload QueryResponse
+	decodeJSON(t, res.Body.Bytes(), &payload)
+	for _, row := range payload.Rows {
+		if row["name"] != "[REDACTED]" {
+			t.Fatalf("expected redacted name column, got %v", row["name"])
+		}
+	}
+}
+
+func TestQueryEndpointRateLimiting(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(t, sqliteapp.Config{
+		DefaultRowLimit:   50,
+		RateLimitRequests: 1,
+		RateLimitWindow:   time.Minute,
+	}, QueryExecutorOptions{})
+	seedPeopleTable(t, server.runtime)
+
+	body := mustJSON(t, QueryRequest{SQL: "SELECT 1 AS one"})
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(body))
+	firstRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(firstRes, firstReq)
+	if firstRes.Code != http.StatusOK {
+		t.Fatalf("expected first request to succeed, got %d body=%s", firstRes.Code, firstRes.Body.String())
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(body))
+	secondRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(secondRes, secondReq)
+	if secondRes.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected second request to be rate-limited (429), got %d body=%s", secondRes.Code, secondRes.Body.String())
+	}
+	var payload QueryErrorResponse
+	decodeJSON(t, secondRes.Body.Bytes(), &payload)
+	if payload.Error.Category != ErrorCategoryExecution {
+		t.Fatalf("expected execution category for rate limit, got %s", payload.Error.Category)
+	}
+}
+
 func TestQueryEndpointPayloadCapTruncation(t *testing.T) {
 	t.Parallel()
 
@@ -402,6 +483,15 @@ func newQueryTestServer(t *testing.T, partialCfg sqliteapp.Config, opts QueryExe
 		cfg.DefaultRowLimit = 50
 	}
 	cfg.EnableMultiStatement = partialCfg.EnableMultiStatement
+	cfg.StatementAllowlist = append([]string(nil), partialCfg.StatementAllowlist...)
+	cfg.StatementDenylist = append([]string(nil), partialCfg.StatementDenylist...)
+	cfg.RedactedColumns = append([]string(nil), partialCfg.RedactedColumns...)
+	if partialCfg.RateLimitRequests > 0 {
+		cfg.RateLimitRequests = partialCfg.RateLimitRequests
+	}
+	if partialCfg.RateLimitWindow > 0 {
+		cfg.RateLimitWindow = partialCfg.RateLimitWindow
+	}
 
 	runtime := mustRuntime(t, cfg)
 	executor, err := NewQueryExecutor(runtime, opts)
