@@ -1,6 +1,11 @@
 export { sqliteLauncherModule } from './launcher/module';
 export { SqliteLauncherAppWindow, type SqliteLauncherAppWindowProps } from './launcher/renderSqliteApp';
 export {
+  buildSqliteCardWindowPayload,
+  createSqliteContributions,
+} from './launcher/module';
+export { SQLITE_STACK } from './domain/stack';
+export {
   SQLITE_HYPERCARD_QUERY_INTENT,
   SQLITE_HYPERCARD_QUERY_INTENT_PAYLOAD_SCHEMA_REFERENCE,
   SQLITE_HYPERCARD_QUERY_INTENT_RESULT_SCHEMA_REFERENCE,
