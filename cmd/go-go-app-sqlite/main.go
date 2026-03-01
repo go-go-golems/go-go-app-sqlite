@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/go-go-golems/go-go-app-sqlite/pkg/backendcomponent"
 	"github.com/go-go-golems/go-go-app-sqlite/pkg/sqliteapp"
 )
 
@@ -42,12 +42,20 @@ func run() error {
 	if err != nil {
 		return errors.Wrap(err, "create sqlite runtime")
 	}
-	defer func() {
-		_ = runtime.Close()
-	}()
 
-	if err := runtime.Open(context.Background()); err != nil {
-		return errors.Wrap(err, "open sqlite runtime")
+	component, err := backendcomponent.NewSQLiteBackendComponent(backendcomponent.Options{
+		Runtime: runtime,
+		Logger:  log.Default(),
+	})
+	if err != nil {
+		return errors.Wrap(err, "create sqlite backend component")
+	}
+
+	if err := component.Init(context.Background()); err != nil {
+		return errors.Wrap(err, "initialize sqlite backend component")
+	}
+	if err := component.Start(context.Background()); err != nil {
+		return errors.Wrap(err, "start sqlite backend component")
 	}
 
 	log.Printf(
@@ -59,18 +67,34 @@ func run() error {
 		cfg.SQLite.StatementTimeout,
 	)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, req *http.Request) {
-		if err := runtime.Ping(req.Context()); err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "degraded", "error": err.Error()})
+	rootMux := http.NewServeMux()
+	appMux := http.NewServeMux()
+	if err := component.MountRoutes(appMux); err != nil {
+		return errors.Wrap(err, "mount sqlite app routes")
+	}
+
+	rootMux.Handle("/api/apps/sqlite/", http.StripPrefix("/api/apps/sqlite", appMux))
+	rootMux.HandleFunc("/api/apps/sqlite", func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, "/api/apps/sqlite/health", http.StatusTemporaryRedirect)
+	})
+	rootMux.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte("method not allowed"))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		if err := component.Health(req.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("degraded"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
 	})
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           mux,
+		Handler:           rootMux,
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
@@ -98,8 +122,8 @@ func run() error {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return errors.Wrap(err, "shutdown sqlite app server")
 	}
-	if err := runtime.Close(); err != nil {
-		return errors.Wrap(err, "close sqlite runtime")
+	if err := component.Stop(context.Background()); err != nil {
+		return errors.Wrap(err, "stop sqlite backend component")
 	}
 	return nil
 }
@@ -114,6 +138,7 @@ func resolveCLIConfig() (cliConfig, error) {
 	dbRowLimit := envInt("SQLITE_APP_DEFAULT_ROW_LIMIT", sqliteDefaults.DefaultRowLimit)
 	dbBusyTimeout := envInt("SQLITE_APP_DB_BUSY_TIMEOUT_MS", sqliteDefaults.OpenBusyTimeoutMS)
 	dbStatementTimeout := envDuration("SQLITE_APP_STATEMENT_TIMEOUT", sqliteDefaults.StatementTimeout)
+	enableMultiStatement := envBool("SQLITE_APP_ENABLE_MULTI_STATEMENT", sqliteDefaults.EnableMultiStatement)
 
 	flag.StringVar(&listenAddr, "listen", listenAddr, "HTTP listen address")
 	flag.StringVar(&dbPath, "db-path", dbPath, "SQLite DB file path")
@@ -122,15 +147,17 @@ func resolveCLIConfig() (cliConfig, error) {
 	flag.IntVar(&dbRowLimit, "db-default-row-limit", dbRowLimit, "Default max row count returned per query")
 	flag.IntVar(&dbBusyTimeout, "db-busy-timeout-ms", dbBusyTimeout, "SQLite busy timeout in milliseconds")
 	flag.DurationVar(&dbStatementTimeout, "db-statement-timeout", dbStatementTimeout, "Default SQL statement timeout")
+	flag.BoolVar(&enableMultiStatement, "enable-multi-statement", enableMultiStatement, "Allow multi-statement SQL payloads when request flag allow_multi_statement=true")
 	flag.Parse()
 
 	sqliteConfig := sqliteapp.Config{
-		DBPath:            dbPath,
-		ReadOnly:          dbReadOnly,
-		AutoCreate:        dbAutoCreate,
-		DefaultRowLimit:   dbRowLimit,
-		StatementTimeout:  dbStatementTimeout,
-		OpenBusyTimeoutMS: dbBusyTimeout,
+		DBPath:               dbPath,
+		ReadOnly:             dbReadOnly,
+		AutoCreate:           dbAutoCreate,
+		DefaultRowLimit:      dbRowLimit,
+		StatementTimeout:     dbStatementTimeout,
+		OpenBusyTimeoutMS:    dbBusyTimeout,
+		EnableMultiStatement: enableMultiStatement,
 	}
 
 	sqliteConfig = sqliteConfig.Normalize()
@@ -195,11 +222,4 @@ func toAbsPath(path string) string {
 		return path
 	}
 	return absPath
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload map[string]any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	encoder := json.NewEncoder(w)
-	_ = encoder.Encode(payload)
 }
