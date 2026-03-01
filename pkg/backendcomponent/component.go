@@ -58,7 +58,11 @@ func NewSQLiteBackendComponent(opts Options) (*SQLiteBackendComponent, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "create sqlite query executor")
 	}
-	queryHandler, err := sqliteapi.NewQueryHandler(executor, logger)
+	store, err := sqliteapi.NewMetadataStore(opts.Runtime)
+	if err != nil {
+		return nil, errors.Wrap(err, "create sqlite metadata store")
+	}
+	queryHandler, err := sqliteapi.NewQueryHandler(executor, store, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "create sqlite query handler")
 	}
@@ -96,6 +100,10 @@ func (m *SQLiteBackendComponent) MountRoutes(mux *http.ServeMux) error {
 	mux.HandleFunc("/health/", m.handleHealth)
 	mux.HandleFunc("/query", m.queryHandler.HandleQuery)
 	mux.HandleFunc("/query/", m.queryHandler.HandleQuery)
+	mux.HandleFunc("/history", m.queryHandler.HandleHistory)
+	mux.HandleFunc("/history/", m.queryHandler.HandleHistory)
+	mux.HandleFunc("/saved-queries", m.queryHandler.HandleSavedQueries)
+	mux.HandleFunc("/saved-queries/", m.queryHandler.HandleSavedQueryByID)
 	return nil
 }
 

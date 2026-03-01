@@ -38,6 +38,48 @@ type QueryResponse struct {
 	Meta    QueryExecutionMeta `json:"meta"`
 }
 
+type QueryHistoryEntry struct {
+	ID           string `json:"id"`
+	QueryText    string `json:"query_text"`
+	QueryPreview string `json:"query_preview"`
+	ParamsJSON   string `json:"params_json"`
+	Status       string `json:"status"`
+	DurationMS   int64  `json:"duration_ms"`
+	RowCount     int    `json:"row_count"`
+	ErrorSummary string `json:"error_summary"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type QueryHistoryListResponse struct {
+	Items  []QueryHistoryEntry `json:"items"`
+	Total  int                 `json:"total"`
+	Limit  int                 `json:"limit"`
+	Offset int                 `json:"offset"`
+}
+
+type SavedQuery struct {
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	SQL              string         `json:"sql"`
+	PositionalParams []any          `json:"positional_params,omitempty"`
+	NamedParams      map[string]any `json:"named_params,omitempty"`
+	SchemaVersion    int            `json:"schema_version"`
+	CreatedAt        string         `json:"created_at"`
+	UpdatedAt        string         `json:"updated_at"`
+}
+
+type SavedQueryListResponse struct {
+	Items []SavedQuery `json:"items"`
+}
+
+type SavedQueryUpsertRequest struct {
+	Name             string         `json:"name"`
+	SQL              string         `json:"sql"`
+	PositionalParams []any          `json:"positional_params,omitempty"`
+	NamedParams      map[string]any `json:"named_params,omitempty"`
+	SchemaVersion    int            `json:"schema_version,omitempty"`
+}
+
 type ErrorCategory string
 
 const (

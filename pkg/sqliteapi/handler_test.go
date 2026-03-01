@@ -155,7 +155,11 @@ func TestQueryEndpointPermissionErrorReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new query executor: %v", err)
 	}
-	handler, err := NewQueryHandler(executor, nil)
+	store, err := NewMetadataStore(readOnlyRuntime)
+	if err != nil {
+		t.Fatalf("new metadata store: %v", err)
+	}
+	handler, err := NewQueryHandler(executor, store, nil)
 	if err != nil {
 		t.Fatalf("new query handler: %v", err)
 	}
@@ -247,6 +251,138 @@ func TestQueryEndpointCorrelationIDFromHeader(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordsSuccessAndErrorQueries(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(t, sqliteapp.Config{DefaultRowLimit: 50}, QueryExecutorOptions{})
+	seedPeopleTable(t, server.runtime)
+
+	successBody := mustJSON(t, QueryRequest{SQL: "SELECT id FROM people ORDER BY id"})
+	successReq := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(successBody))
+	successRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(successRes, successReq)
+	if successRes.Code != http.StatusOK {
+		t.Fatalf("expected success query to return 200, got %d", successRes.Code)
+	}
+
+	errorBody := mustJSON(t, QueryRequest{SQL: "SELEC id FROM people"})
+	errorReq := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(errorBody))
+	errorRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(errorRes, errorReq)
+	if errorRes.Code != http.StatusBadRequest {
+		t.Fatalf("expected syntax query to return 400, got %d", errorRes.Code)
+	}
+
+	historyReq := httptest.NewRequest(http.MethodGet, "/api/apps/sqlite/history?limit=10", nil)
+	historyRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(historyRes, historyReq)
+	if historyRes.Code != http.StatusOK {
+		t.Fatalf("expected history to return 200, got %d body=%s", historyRes.Code, historyRes.Body.String())
+	}
+
+	var payload QueryHistoryListResponse
+	decodeJSON(t, historyRes.Body.Bytes(), &payload)
+	if payload.Total < 2 || len(payload.Items) < 2 {
+		t.Fatalf("expected at least 2 history entries, total=%d items=%d", payload.Total, len(payload.Items))
+	}
+	seenSuccess := false
+	seenError := false
+	for _, item := range payload.Items {
+		if item.QueryPreview == "" {
+			t.Fatalf("expected query preview to be populated")
+		}
+		switch item.Status {
+		case "success":
+			seenSuccess = true
+		case "error":
+			seenError = true
+		}
+	}
+	if !seenSuccess || !seenError {
+		t.Fatalf("expected both success and error history statuses, got %+v", payload.Items)
+	}
+}
+
+func TestSavedQueryCRUDAndUniqueness(t *testing.T) {
+	t.Parallel()
+
+	server := newQueryTestServer(t, sqliteapp.Config{DefaultRowLimit: 50}, QueryExecutorOptions{})
+
+	createReq := SavedQueryUpsertRequest{
+		Name:          "List People",
+		SQL:           "SELECT * FROM people ORDER BY id",
+		SchemaVersion: 2,
+	}
+	createRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(
+		createRes,
+		httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/saved-queries", bytes.NewReader(mustJSON(t, createReq))),
+	)
+	if createRes.Code != http.StatusCreated {
+		t.Fatalf("expected create 201, got %d body=%s", createRes.Code, createRes.Body.String())
+	}
+	var created SavedQuery
+	decodeJSON(t, createRes.Body.Bytes(), &created)
+	if created.ID == "" {
+		t.Fatalf("expected created saved query id")
+	}
+	if created.SchemaVersion != 2 {
+		t.Fatalf("expected schema version 2, got %d", created.SchemaVersion)
+	}
+
+	duplicateRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(
+		duplicateRes,
+		httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/saved-queries", bytes.NewReader(mustJSON(t, createReq))),
+	)
+	if duplicateRes.Code != http.StatusBadRequest {
+		t.Fatalf("expected duplicate name to return 400, got %d body=%s", duplicateRes.Code, duplicateRes.Body.String())
+	}
+	var duplicateErr QueryErrorResponse
+	decodeJSON(t, duplicateRes.Body.Bytes(), &duplicateErr)
+	if duplicateErr.Error.Category != ErrorCategoryValidation {
+		t.Fatalf("expected duplicate error category validation, got %s", duplicateErr.Error.Category)
+	}
+
+	listRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(listRes, httptest.NewRequest(http.MethodGet, "/api/apps/sqlite/saved-queries", nil))
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected list 200, got %d body=%s", listRes.Code, listRes.Body.String())
+	}
+	var listPayload SavedQueryListResponse
+	decodeJSON(t, listRes.Body.Bytes(), &listPayload)
+	if len(listPayload.Items) != 1 {
+		t.Fatalf("expected one saved query, got %d", len(listPayload.Items))
+	}
+
+	updateReq := SavedQueryUpsertRequest{
+		Name:             "List People Updated",
+		SQL:              "SELECT id, name FROM people ORDER BY id",
+		NamedParams:      map[string]any{"noop": "value"},
+		SchemaVersion:    3,
+		PositionalParams: nil,
+	}
+	updateRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(
+		updateRes,
+		httptest.NewRequest(http.MethodPut, "/api/apps/sqlite/saved-queries/"+created.ID, bytes.NewReader(mustJSON(t, updateReq))),
+	)
+	if updateRes.Code != http.StatusOK {
+		t.Fatalf("expected update 200, got %d body=%s", updateRes.Code, updateRes.Body.String())
+	}
+	var updated SavedQuery
+	decodeJSON(t, updateRes.Body.Bytes(), &updated)
+	if updated.Name != "List People Updated" || updated.SchemaVersion != 3 {
+		t.Fatalf("unexpected updated saved query: %+v", updated)
+	}
+
+	deleteRes := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteRes, httptest.NewRequest(http.MethodDelete, "/api/apps/sqlite/saved-queries/"+created.ID, nil))
+	if deleteRes.Code != http.StatusNoContent {
+		t.Fatalf("expected delete 204, got %d body=%s", deleteRes.Code, deleteRes.Body.String())
+	}
+}
+
 type queryTestServer struct {
 	runtime *sqliteapp.Runtime
 	mux     *http.ServeMux
@@ -272,7 +408,11 @@ func newQueryTestServer(t *testing.T, partialCfg sqliteapp.Config, opts QueryExe
 	if err != nil {
 		t.Fatalf("new query executor: %v", err)
 	}
-	handler, err := NewQueryHandler(executor, nil)
+	store, err := NewMetadataStore(runtime)
+	if err != nil {
+		t.Fatalf("new metadata store: %v", err)
+	}
+	handler, err := NewQueryHandler(executor, store, nil)
 	if err != nil {
 		t.Fatalf("new query handler: %v", err)
 	}
@@ -280,6 +420,9 @@ func newQueryTestServer(t *testing.T, partialCfg sqliteapp.Config, opts QueryExe
 	rootMux := http.NewServeMux()
 	appMux := http.NewServeMux()
 	appMux.HandleFunc("/query", handler.HandleQuery)
+	appMux.HandleFunc("/history", handler.HandleHistory)
+	appMux.HandleFunc("/saved-queries", handler.HandleSavedQueries)
+	appMux.HandleFunc("/saved-queries/", handler.HandleSavedQueryByID)
 	rootMux.Handle("/api/apps/sqlite/", http.StripPrefix("/api/apps/sqlite", appMux))
 
 	return queryTestServer{runtime: runtime, mux: rootMux}
