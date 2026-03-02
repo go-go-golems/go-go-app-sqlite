@@ -1,0 +1,1 @@
+export { sqliteLauncherModule } from './module';

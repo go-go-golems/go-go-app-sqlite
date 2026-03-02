@@ -1,0 +1,54 @@
+type CaseReducer<S> = (state: S, action: { type: string; payload?: unknown }) => void;
+
+interface SliceOptions<S> {
+  name: string;
+  initialState: S;
+  reducers: Record<string, CaseReducer<S>>;
+  extraReducers?: (builder: {
+    addCase: (type: string, reducer: CaseReducer<S>) => void;
+  }) => void;
+}
+
+function cloneState<S>(value: S): S {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as S;
+}
+
+export function createSlice<S>(options: SliceOptions<S>) {
+  const ownCaseMap: Record<string, CaseReducer<S>> = {};
+  for (const [name, reducer] of Object.entries(options.reducers)) {
+    ownCaseMap[`${options.name}/${name}`] = reducer;
+  }
+
+  const extraCaseMap: Record<string, CaseReducer<S>> = {};
+  if (options.extraReducers) {
+    options.extraReducers({
+      addCase(type, reducer) {
+        extraCaseMap[String(type)] = reducer;
+      },
+    });
+  }
+
+  function reducer(state: S | undefined, action: { type: string; payload?: unknown }): S {
+    const draft = cloneState(state ?? options.initialState);
+    const handler = ownCaseMap[action.type] ?? extraCaseMap[action.type];
+    if (handler) {
+      handler(draft, action);
+    }
+    return draft;
+  }
+
+  const actions = Object.fromEntries(
+    Object.keys(options.reducers).map((name) => [
+      name,
+      (payload: unknown) => ({ type: `${options.name}/${name}`, payload }),
+    ]),
+  );
+
+  return {
+    reducer,
+    actions,
+  };
+}

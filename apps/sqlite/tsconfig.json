@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "react-jsx",
+    "outDir": "dist",
+    "skipLibCheck": true,
+    "paths": {
+      "@hypercard/desktop-os": ["../../../go-go-os-frontend/packages/desktop-os/src"],
+      "@hypercard/desktop-os/*": ["../../../go-go-os-frontend/packages/desktop-os/src/*"],
+      "@hypercard/engine": ["../../../go-go-os-frontend/packages/engine/src"],
+      "@hypercard/engine/*": ["../../../go-go-os-frontend/packages/engine/src/*"],
+      "@hypercard/hypercard-runtime": ["../../../go-go-os-frontend/packages/hypercard-runtime/src"],
+      "@hypercard/hypercard-runtime/*": ["../../../go-go-os-frontend/packages/hypercard-runtime/src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
+  "references": [
+    { "path": "../../../go-go-os-frontend/packages/desktop-os" },
+    { "path": "../../../go-go-os-frontend/packages/engine" },
+    { "path": "../../../go-go-os-frontend/packages/hypercard-runtime" }
+  ]
+}
