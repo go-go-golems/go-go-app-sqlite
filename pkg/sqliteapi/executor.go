@@ -110,6 +110,7 @@ func (q *QueryExecutor) Execute(ctx context.Context, req QueryRequest, correlati
 	}
 
 	if isMutationStatement(statementType) {
+		// #nosec G201 -- SQL text is intentionally user-supplied for sqlite workbench execution and is policy-gated.
 		execResult, err := db.ExecContext(ctx, normalizedReq.SQL, args...)
 		if err != nil {
 			return nil, classifyExecutionError(err)
@@ -122,6 +123,7 @@ func (q *QueryExecutor) Execute(ctx context.Context, req QueryRequest, correlati
 		return result, nil
 	}
 
+	// #nosec G201 -- SQL text is intentionally user-supplied for sqlite workbench execution and is policy-gated.
 	rows, err := db.QueryContext(ctx, normalizedReq.SQL, args...)
 	if err != nil {
 		return nil, classifyExecutionError(err)
@@ -305,7 +307,7 @@ func buildColumnMetadata(columns []string, types []*sql.ColumnType) []QueryColum
 }
 
 func detectStatementType(sqlText string) string {
-	normalized := strings.TrimSpace(strings.ToUpper(sqlText))
+	normalized := strings.TrimSpace(strings.ToUpper(stripLeadingSQLComments(sqlText)))
 	if normalized == "" {
 		return "UNKNOWN"
 	}
@@ -323,6 +325,42 @@ func detectStatementType(sqlText string) string {
 		return "WITH"
 	}
 	return parts[0]
+}
+
+func stripLeadingSQLComments(sqlText string) string {
+	i := 0
+	for {
+		for i < len(sqlText) && isWhitespace(sqlText[i]) {
+			i++
+		}
+		if i >= len(sqlText) {
+			return ""
+		}
+		if i+1 < len(sqlText) && sqlText[i] == '-' && sqlText[i+1] == '-' {
+			i += 2
+			for i < len(sqlText) && sqlText[i] != '\n' {
+				i++
+			}
+			continue
+		}
+		if i+1 < len(sqlText) && sqlText[i] == '/' && sqlText[i+1] == '*' {
+			i += 2
+			closed := false
+			for i+1 < len(sqlText) {
+				if sqlText[i] == '*' && sqlText[i+1] == '/' {
+					i += 2
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return ""
+			}
+			continue
+		}
+		return sqlText[i:]
+	}
 }
 
 func isMutationStatement(statementType string) bool {

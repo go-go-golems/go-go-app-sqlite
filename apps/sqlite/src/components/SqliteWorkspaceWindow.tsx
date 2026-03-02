@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SqliteQueryIntentPayload, SqliteQueryIntentResult } from '../domain/hypercard/intentContract';
 import { handleSqliteQueryIntent } from '../domain/hypercard/runtimeHandlers';
 import {
@@ -82,7 +82,8 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
   const [uiError, setUIError] = useState<UIErrorState | null>(null);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [activeRequestId, setActiveRequestId] = useState<string>('');
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const activeRequestIdRef = useRef<string>('');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // ── History state ──
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
@@ -301,11 +302,12 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     const payloads = buildQueryPayloadsFromEditor();
     if (!payloads) return;
 
-    if (abortController) abortController.abort();
+    if (abortControllerRef.current) abortControllerRef.current.abort();
 
     const controller = new AbortController();
     const requestId = `ui-${Date.now()}`;
-    setAbortController(controller);
+    abortControllerRef.current = controller;
+    activeRequestIdRef.current = requestId;
     setActiveRequestId(requestId);
     setIsExecuting(true);
     setUIError(null);
@@ -341,20 +343,28 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       }
       setQueryResponse(null);
     } finally {
-      setIsExecuting(false);
-      setAbortController(null);
+      if (activeRequestIdRef.current === requestId) {
+        activeRequestIdRef.current = '';
+        setActiveRequestId('');
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+        setIsExecuting(false);
+      }
     }
-  }, [abortController, buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
+  }, [buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
 
   const executeViaIntentBridge = useCallback(async () => {
     const payloads = buildQueryPayloadsFromEditor();
     if (!payloads) return;
-    if (abortController) abortController.abort();
+    if (abortControllerRef.current) abortControllerRef.current.abort();
 
-    setAbortController(null);
+    const requestId = `intent-ui-${Date.now()}`;
+    abortControllerRef.current = null;
+    activeRequestIdRef.current = requestId;
+    setActiveRequestId(requestId);
     setIsExecuting(true);
     setUIError(null);
-    setActiveRequestId(`intent-ui-${Date.now()}`);
 
     try {
       const result = await handleSqliteQueryIntent(
@@ -393,13 +403,17 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       setUIError(null);
       await loadHistory();
     } finally {
-      setIsExecuting(false);
+      if (activeRequestIdRef.current === requestId) {
+        activeRequestIdRef.current = '';
+        setActiveRequestId('');
+        setIsExecuting(false);
+      }
     }
-  }, [abortController, buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
+  }, [buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
 
   const cancelExecution = useCallback(() => {
-    if (abortController) abortController.abort();
-  }, [abortController]);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+  }, []);
 
   const resetEditor = useCallback(() => {
     setSqlText('');

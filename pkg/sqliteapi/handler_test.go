@@ -232,6 +232,60 @@ func TestQueryEndpointStatementDenylistPolicy(t *testing.T) {
 	}
 }
 
+func TestQueryEndpointStatementPolicyStripsLeadingComments(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default denylist blocks comment-prefixed ATTACH", func(t *testing.T) {
+		t.Parallel()
+
+		server := newQueryTestServer(t, sqliteapp.Config{
+			DefaultRowLimit:   50,
+			StatementDenylist: []string{"ATTACH"},
+		}, QueryExecutorOptions{})
+		seedPeopleTable(t, server.runtime)
+
+		body := mustJSON(t, QueryRequest{
+			SQL: "/* bypass attempt */ ATTACH DATABASE ':memory:' AS aux",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(body))
+		res := httptest.NewRecorder()
+		server.mux.ServeHTTP(res, req)
+
+		if res.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for comment-prefixed ATTACH, got %d body=%s", res.Code, res.Body.String())
+		}
+		var payload QueryErrorResponse
+		decodeJSON(t, res.Body.Bytes(), &payload)
+		if payload.Error.Category != ErrorCategoryPermission {
+			t.Fatalf("expected permission category, got %s", payload.Error.Category)
+		}
+	})
+
+	t.Run("custom denylist blocks line-comment-prefixed SELECT", func(t *testing.T) {
+		t.Parallel()
+
+		server := newQueryTestServer(t, sqliteapp.Config{
+			DefaultRowLimit:   50,
+			StatementDenylist: []string{"SELECT"},
+		}, QueryExecutorOptions{})
+		seedPeopleTable(t, server.runtime)
+
+		body := mustJSON(t, QueryRequest{SQL: "-- lead comment\nSELECT id, name FROM people ORDER BY id"})
+		req := httptest.NewRequest(http.MethodPost, "/api/apps/sqlite/query", bytes.NewReader(body))
+		res := httptest.NewRecorder()
+		server.mux.ServeHTTP(res, req)
+
+		if res.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for comment-prefixed SELECT, got %d body=%s", res.Code, res.Body.String())
+		}
+		var payload QueryErrorResponse
+		decodeJSON(t, res.Body.Bytes(), &payload)
+		if payload.Error.Category != ErrorCategoryPermission {
+			t.Fatalf("expected permission category, got %s", payload.Error.Category)
+		}
+	})
+}
+
 func TestQueryEndpointRedactsConfiguredColumns(t *testing.T) {
 	t.Parallel()
 
