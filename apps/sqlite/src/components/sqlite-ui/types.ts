@@ -55,3 +55,30 @@ export interface SavedQuery {
   created_at: string;
   updated_at: string;
 }
+
+// ── Schema browser types ──
+
+export interface SchemaTableInfo {
+  name: string;
+  type: 'table' | 'view';
+  sql: string;
+}
+
+export interface SchemaColumnInfo {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: boolean;
+  dflt_value: string | null;
+  pk: boolean;
+}
+
+export interface SchemaIndexInfo {
+  name: string;
+  unique: boolean;
+}
+
+export interface SchemaTableDetails {
+  columns: SchemaColumnInfo[];
+  indexes: SchemaIndexInfo[];
+}

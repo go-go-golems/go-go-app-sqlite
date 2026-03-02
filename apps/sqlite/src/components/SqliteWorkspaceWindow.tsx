@@ -10,12 +10,15 @@ import {
   QueryHistoryPanel,
   SavedQueriesPanel,
   IntentDebugPanel,
+  SchemaBrowserPanel,
   type ParameterMode,
   type HistoryFilter,
   type QueryResponse,
   type UIErrorState,
   type QueryHistoryEntry,
   type SavedQuery,
+  type SchemaTableInfo,
+  type SchemaTableDetails,
 } from './sqlite-ui';
 import './sqlite-ui/sqlite-workspace.css';
 
@@ -90,6 +93,12 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
   const [savedQueryName, setSavedQueryName] = useState<string>('');
   const [savedQuerySchemaVersion, setSavedQuerySchemaVersion] = useState<string>('1');
 
+  // ── Schema browser state ──
+  const [schemaTables, setSchemaTables] = useState<SchemaTableInfo[]>([]);
+  const [schemaExpanded, setSchemaExpanded] = useState<Set<string>>(new Set());
+  const [schemaDetails, setSchemaDetails] = useState<Record<string, SchemaTableDetails>>({});
+  const [isSchemaLoading, setIsSchemaLoading] = useState<boolean>(false);
+
   // ── Data loading ──
 
   const loadHistory = useCallback(async () => {
@@ -132,8 +141,97 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     }
   }, [resolvedApiBase]);
 
+  const loadSchema = useCallback(async () => {
+    setIsSchemaLoading(true);
+    try {
+      const response = await fetch(`${resolvedApiBase}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sql: "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+          row_limit: 200,
+        }),
+      });
+      const body = (await response.json()) as QueryResponse & APIErrorEnvelope;
+      if (!response.ok) {
+        throw new Error(body.error?.message ?? 'failed to load schema');
+      }
+      const tables: SchemaTableInfo[] = (body as QueryResponse).rows.map((row) => ({
+        name: String(row.name ?? ''),
+        type: (String(row.type) === 'view' ? 'view' : 'table') as 'table' | 'view',
+        sql: String(row.sql ?? ''),
+      }));
+      setSchemaTables(tables);
+    } catch (error) {
+      setUIError({
+        category: 'execution',
+        message: `Schema load failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      setIsSchemaLoading(false);
+    }
+  }, [resolvedApiBase]);
+
+  const loadTableDetails = useCallback(async (tableName: string) => {
+    try {
+      const safeName = tableName.replace(/"/g, '""');
+      const [colResponse, idxResponse] = await Promise.all([
+        fetch(`${resolvedApiBase}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: `PRAGMA table_info("${safeName}")`, row_limit: 200 }),
+        }),
+        fetch(`${resolvedApiBase}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: `PRAGMA index_list("${safeName}")`, row_limit: 200 }),
+        }),
+      ]);
+      const colBody = (await colResponse.json()) as QueryResponse & APIErrorEnvelope;
+      const idxBody = (await idxResponse.json()) as QueryResponse & APIErrorEnvelope;
+      if (!colResponse.ok) throw new Error(colBody.error?.message ?? 'failed to load columns');
+
+      const columns = (colBody as QueryResponse).rows.map((row) => ({
+        cid: Number(row.cid ?? 0),
+        name: String(row.name ?? ''),
+        type: String(row.type ?? ''),
+        notnull: Boolean(row.notnull),
+        dflt_value: row.dflt_value != null ? String(row.dflt_value) : null,
+        pk: Boolean(row.pk),
+      }));
+      const indexes = idxResponse.ok
+        ? (idxBody as QueryResponse).rows.map((row) => ({
+            name: String(row.name ?? ''),
+            unique: Boolean(row.unique),
+          }))
+        : [];
+      setSchemaDetails((prev) => ({ ...prev, [tableName]: { columns, indexes } }));
+    } catch (error) {
+      setUIError({
+        category: 'execution',
+        message: `Table details load failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }, [resolvedApiBase]);
+
+  const toggleSchemaTable = useCallback((tableName: string) => {
+    setSchemaExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(tableName)) {
+        next.delete(tableName);
+      } else {
+        next.add(tableName);
+        if (!schemaDetails[tableName]) {
+          void loadTableDetails(tableName);
+        }
+      }
+      return next;
+    });
+  }, [schemaDetails, loadTableDetails]);
+
   useEffect(() => { void loadHistory(); }, [loadHistory]);
   useEffect(() => { void loadSavedQueries(); }, [loadSavedQueries]);
+  useEffect(() => { void loadSchema(); }, [loadSchema]);
 
   // ── Query building ──
 
@@ -542,6 +640,16 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
+          <SchemaBrowserPanel
+            tables={schemaTables}
+            tableDetails={schemaDetails}
+            expandedTables={schemaExpanded}
+            isLoading={isSchemaLoading}
+            onReload={() => void loadSchema()}
+            onToggleTable={toggleSchemaTable}
+            onUseInQuery={setSqlText}
+          />
+
           <QueryHistoryPanel
             historyFilter={historyFilter}
             onFilterChange={setHistoryFilter}

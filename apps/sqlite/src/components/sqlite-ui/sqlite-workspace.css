@@ -347,6 +347,129 @@
   background: var(--hc-color-alt);
 }
 
+/* ── Schema browser ── */
+[data-part="sqlite-schema-list"] {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--hc-color-border);
+}
+[data-part="sqlite-schema-table"] {
+  border-bottom: 1px solid #ccc;
+}
+[data-part="sqlite-schema-table-header"] {
+  font-family: var(--hc-font-family);
+  font-size: 11px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  appearance: none;
+  color: inherit;
+  text-align: left;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+[data-part="sqlite-schema-table-header"]:hover {
+  background: var(--hc-color-row-hover);
+}
+[data-part="sqlite-schema-toggle"] {
+  font-size: 8px;
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--hc-color-muted);
+}
+[data-part="sqlite-schema-table-name"] {
+  font-weight: bold;
+}
+[data-part="sqlite-schema-table-type"] {
+  font-size: 9px;
+  color: var(--hc-color-muted);
+  text-transform: uppercase;
+  margin-left: auto;
+}
+[data-part="sqlite-schema-details"] {
+  padding: 4px 6px 8px 22px;
+  display: grid;
+  gap: 6px;
+}
+[data-part="sqlite-schema-loading"] {
+  font-size: 10px;
+  color: var(--hc-color-muted);
+  font-style: italic;
+}
+[data-part="sqlite-schema-columns"] {
+  display: grid;
+  gap: 1px;
+}
+[data-part="sqlite-schema-column"] {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  padding: 1px 0;
+}
+[data-part="sqlite-schema-col-name"] {
+  font-weight: 500;
+  min-width: 80px;
+}
+[data-part="sqlite-schema-col-name"][data-state="pk"] {
+  font-weight: bold;
+}
+[data-part="sqlite-schema-col-type"] {
+  font-size: 9px;
+  color: var(--hc-color-muted);
+  text-transform: uppercase;
+  min-width: 60px;
+}
+[data-part="sqlite-schema-col-constraint"] {
+  font-size: 9px;
+  color: var(--hc-color-warning);
+  font-weight: bold;
+}
+[data-part="sqlite-schema-col-default"] {
+  font-size: 9px;
+  color: var(--hc-color-muted);
+}
+[data-part="sqlite-schema-indexes"] {
+  border-top: 1px solid #ddd;
+  padding-top: 4px;
+}
+[data-part="sqlite-schema-indexes-header"] {
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--hc-color-muted);
+  margin-bottom: 2px;
+}
+[data-part="sqlite-schema-index"] {
+  font-size: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+}
+[data-part="sqlite-schema-actions"] {
+  display: flex;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #ddd;
+}
+[data-part="sqlite-schema-actions"] [data-part="btn"] {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+[data-part="sqlite-schema-ddl"] {
+  margin: 0;
+  padding: 6px;
+  border: 1px solid #ccc;
+  background: var(--hc-color-alt);
+  font-size: 10px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ── Empty state ── */
 [data-part="sqlite-empty-state"] {
   padding: 12px 8px;

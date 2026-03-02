@@ -6,6 +6,7 @@ export { ResultsPanel, type ResultsPanelProps } from './ResultsPanel';
 export { QueryHistoryPanel, type QueryHistoryPanelProps } from './QueryHistoryPanel';
 export { SavedQueriesPanel, type SavedQueriesPanelProps } from './SavedQueriesPanel';
 export { IntentDebugPanel, type IntentDebugPanelProps } from './IntentDebugPanel';
+export { SchemaBrowserPanel, type SchemaBrowserPanelProps } from './SchemaBrowserPanel';
 export type {
   ParameterMode,
   HistoryFilter,
@@ -15,4 +16,8 @@ export type {
   UIErrorState,
   QueryHistoryEntry,
   SavedQuery,
+  SchemaTableInfo,
+  SchemaTableDetails,
+  SchemaColumnInfo,
+  SchemaIndexInfo,
 } from './types';
