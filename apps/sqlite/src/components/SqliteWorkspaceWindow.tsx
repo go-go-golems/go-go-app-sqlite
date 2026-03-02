@@ -19,6 +19,7 @@ import {
   type SavedQuery,
   type SchemaTableInfo,
   type SchemaTableDetails,
+  type WorkspaceTab,
 } from './sqlite-ui';
 import './sqlite-ui/sqlite-workspace.css';
 
@@ -65,6 +66,9 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     const value = (apiBasePrefix || '/api/apps/sqlite').trim();
     return value.endsWith('/') ? value.slice(0, -1) : value;
   }, [apiBasePrefix]);
+
+  // ── Tab state ──
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('query');
 
   // ── Editor state ──
   const [sqlText, setSqlText] = useState<string>('SELECT id, name FROM people ORDER BY id LIMIT 20');
@@ -604,6 +608,12 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     return () => document.removeEventListener('keydown', handler);
   }, [isExecuting, cancelExecution]);
 
+  // ── Schema → Query tab bridge ──
+  const handleUseInQuery = useCallback((sql: string) => {
+    setSqlText(sql);
+    setActiveTab('query');
+  }, []);
+
   // ── Render ──
 
   return (
@@ -614,32 +624,64 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
         isExecuting={isExecuting}
       />
 
+      <div data-part="sqlite-tabs">
+        <button data-part="sqlite-tab" data-state={activeTab === 'query' ? 'active' : undefined} onClick={() => setActiveTab('query')}>
+          Query
+        </button>
+        <button data-part="sqlite-tab" data-state={activeTab === 'schema' ? 'active' : undefined} onClick={() => setActiveTab('schema')}>
+          Schema
+        </button>
+        <button data-part="sqlite-tab" data-state={activeTab === 'history' ? 'active' : undefined} onClick={() => setActiveTab('history')}>
+          History
+        </button>
+        <button data-part="sqlite-tab" data-state={activeTab === 'developer' ? 'active' : undefined} onClick={() => setActiveTab('developer')}>
+          Developer
+        </button>
+      </div>
+
       <WorkspaceLayout>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <QueryEditorPanel
-            sqlText={sqlText}
-            onSqlChange={setSqlText}
-            rowLimitInput={rowLimitInput}
-            onRowLimitChange={setRowLimitInput}
-            parameterMode={parameterMode}
-            onParameterModeChange={setParameterMode}
-            paramsEditorText={paramsEditorText}
-            onParamsChange={setParamsEditorText}
-            isExecuting={isExecuting}
-            onExecute={() => void executeQuery()}
-            onCancel={cancelExecution}
-            onReset={resetEditor}
-          />
+        {activeTab === 'query' && (
+          <>
+            <QueryEditorPanel
+              sqlText={sqlText}
+              onSqlChange={setSqlText}
+              rowLimitInput={rowLimitInput}
+              onRowLimitChange={setRowLimitInput}
+              parameterMode={parameterMode}
+              onParameterModeChange={setParameterMode}
+              paramsEditorText={paramsEditorText}
+              onParamsChange={setParamsEditorText}
+              isExecuting={isExecuting}
+              onExecute={() => void executeQuery()}
+              onCancel={cancelExecution}
+              onReset={resetEditor}
+            />
 
-          <ExecutionStatusPanel
-            uiError={uiError}
-            queryResponse={queryResponse}
-          />
+            <ExecutionStatusPanel
+              uiError={uiError}
+              queryResponse={queryResponse}
+            />
 
-          <ResultsPanel queryResponse={queryResponse} />
-        </div>
+            <ResultsPanel queryResponse={queryResponse} />
 
-        <div style={{ display: 'grid', gap: 10 }}>
+            <SavedQueriesPanel
+              savedQueries={savedQueries}
+              selectedSavedQueryId={selectedSavedQueryId}
+              savedQueryName={savedQueryName}
+              onSavedQueryNameChange={setSavedQueryName}
+              savedQuerySchemaVersion={savedQuerySchemaVersion}
+              onSchemaVersionChange={setSavedQuerySchemaVersion}
+              isLoading={isSavedLoading}
+              onReload={() => void loadSavedQueries()}
+              onRestore={restoreFromSaved}
+              onCreate={() => void createSavedQuery()}
+              onUpdate={() => void updateSavedQuery()}
+              onDelete={() => void deleteSavedQuery()}
+            />
+          </>
+        )}
+
+        {activeTab === 'schema' && (
           <SchemaBrowserPanel
             tables={schemaTables}
             tableDetails={schemaDetails}
@@ -647,9 +689,11 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
             isLoading={isSchemaLoading}
             onReload={() => void loadSchema()}
             onToggleTable={toggleSchemaTable}
-            onUseInQuery={setSqlText}
+            onUseInQuery={handleUseInQuery}
           />
+        )}
 
+        {activeTab === 'history' && (
           <QueryHistoryPanel
             historyFilter={historyFilter}
             onFilterChange={setHistoryFilter}
@@ -657,30 +701,20 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
             historyTotal={historyTotal}
             isLoading={isHistoryLoading}
             onReload={() => void loadHistory()}
-            onRestore={restoreFromHistory}
+            onRestore={(item) => {
+              restoreFromHistory(item);
+              setActiveTab('query');
+            }}
           />
+        )}
 
-          <SavedQueriesPanel
-            savedQueries={savedQueries}
-            selectedSavedQueryId={selectedSavedQueryId}
-            savedQueryName={savedQueryName}
-            onSavedQueryNameChange={setSavedQueryName}
-            savedQuerySchemaVersion={savedQuerySchemaVersion}
-            onSchemaVersionChange={setSavedQuerySchemaVersion}
-            isLoading={isSavedLoading}
-            onReload={() => void loadSavedQueries()}
-            onRestore={restoreFromSaved}
-            onCreate={() => void createSavedQuery()}
-            onUpdate={() => void updateSavedQuery()}
-            onDelete={() => void deleteSavedQuery()}
-          />
-
+        {activeTab === 'developer' && (
           <IntentDebugPanel
             lastIntentResult={lastIntentResult}
             isExecuting={isExecuting}
             onExecuteViaIntent={() => void executeViaIntentBridge()}
           />
-        </div>
+        )}
       </WorkspaceLayout>
     </div>
   );

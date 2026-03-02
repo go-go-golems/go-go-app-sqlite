@@ -7,8 +7,19 @@ import { ExecutionStatusPanel } from './ExecutionStatusPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { QueryHistoryPanel } from './QueryHistoryPanel';
 import { SavedQueriesPanel } from './SavedQueriesPanel';
+import { SchemaBrowserPanel } from './SchemaBrowserPanel';
 import { IntentDebugPanel } from './IntentDebugPanel';
-import type { ParameterMode, HistoryFilter, QueryResponse, UIErrorState, QueryHistoryEntry, SavedQuery } from './types';
+import type {
+  ParameterMode,
+  HistoryFilter,
+  QueryResponse,
+  UIErrorState,
+  QueryHistoryEntry,
+  SavedQuery,
+  SchemaTableInfo,
+  SchemaTableDetails,
+  WorkspaceTab,
+} from './types';
 
 const sampleResponse: QueryResponse = {
   columns: [
@@ -82,7 +93,51 @@ const sampleSaved: SavedQuery[] = [
   },
 ];
 
+const sampleTables: SchemaTableInfo[] = [
+  {
+    name: 'people',
+    type: 'table',
+    sql: 'CREATE TABLE people (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL,\n  email TEXT NOT NULL,\n  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n)',
+  },
+  {
+    name: 'orders',
+    type: 'table',
+    sql: 'CREATE TABLE orders (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  person_id INTEGER NOT NULL REFERENCES people(id),\n  amount REAL NOT NULL,\n  status TEXT DEFAULT \'pending\',\n  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n)',
+  },
+  {
+    name: 'active_orders',
+    type: 'view',
+    sql: "CREATE VIEW active_orders AS SELECT * FROM orders WHERE status != 'cancelled'",
+  },
+];
+
+const sampleTableDetails: Record<string, SchemaTableDetails> = {
+  people: {
+    columns: [
+      { cid: 0, name: 'id', type: 'INTEGER', notnull: false, dflt_value: null, pk: true },
+      { cid: 1, name: 'name', type: 'TEXT', notnull: true, dflt_value: null, pk: false },
+      { cid: 2, name: 'email', type: 'TEXT', notnull: true, dflt_value: null, pk: false },
+      { cid: 3, name: 'created_at', type: 'TEXT', notnull: true, dflt_value: 'CURRENT_TIMESTAMP', pk: false },
+    ],
+    indexes: [
+      { name: 'idx_people_email', unique: true },
+    ],
+  },
+};
+
+function TabBar({ activeTab, onTabChange }: { activeTab: WorkspaceTab; onTabChange: (tab: WorkspaceTab) => void }) {
+  return (
+    <div data-part="sqlite-tabs">
+      <button data-part="sqlite-tab" data-state={activeTab === 'query' ? 'active' : undefined} onClick={() => onTabChange('query')}>Query</button>
+      <button data-part="sqlite-tab" data-state={activeTab === 'schema' ? 'active' : undefined} onClick={() => onTabChange('schema')}>Schema</button>
+      <button data-part="sqlite-tab" data-state={activeTab === 'history' ? 'active' : undefined} onClick={() => onTabChange('history')}>History</button>
+      <button data-part="sqlite-tab" data-state={activeTab === 'developer' ? 'active' : undefined} onClick={() => onTabChange('developer')}>Developer</button>
+    </div>
+  );
+}
+
 function FullWorkspace() {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('query');
   const [sqlText, setSqlText] = useState('SELECT id, name, email FROM people ORDER BY id');
   const [rowLimit, setRowLimit] = useState('');
   const [paramMode, setParamMode] = useState<ParameterMode>('none');
@@ -91,6 +146,7 @@ function FullWorkspace() {
   const [selectedSavedId, setSelectedSavedId] = useState('');
   const [savedName, setSavedName] = useState('');
   const [schemaVersion, setSchemaVersion] = useState('1');
+  const [schemaExpanded, setSchemaExpanded] = useState<Set<string>>(new Set(['people']));
 
   return (
     <div data-part="sqlite-workspace">
@@ -99,31 +155,73 @@ function FullWorkspace() {
         activeRequestId="ui-1709312400000"
         isExecuting={false}
       />
+      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
       <WorkspaceLayout>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <QueryEditorPanel
-            sqlText={sqlText}
-            onSqlChange={setSqlText}
-            rowLimitInput={rowLimit}
-            onRowLimitChange={setRowLimit}
-            parameterMode={paramMode}
-            onParameterModeChange={setParamMode}
-            paramsEditorText={params}
-            onParamsChange={setParams}
-            isExecuting={false}
-            onExecute={() => alert('Execute!')}
-            onCancel={() => {}}
-            onReset={() => {
-              setSqlText('');
-              setRowLimit('');
-              setParamMode('none');
-              setParams('[]');
+        {activeTab === 'query' && (
+          <>
+            <QueryEditorPanel
+              sqlText={sqlText}
+              onSqlChange={setSqlText}
+              rowLimitInput={rowLimit}
+              onRowLimitChange={setRowLimit}
+              parameterMode={paramMode}
+              onParameterModeChange={setParamMode}
+              paramsEditorText={params}
+              onParamsChange={setParams}
+              isExecuting={false}
+              onExecute={() => alert('Execute!')}
+              onCancel={() => {}}
+              onReset={() => {
+                setSqlText('');
+                setRowLimit('');
+                setParamMode('none');
+                setParams('[]');
+              }}
+            />
+            <ExecutionStatusPanel uiError={null} queryResponse={sampleResponse} />
+            <ResultsPanel queryResponse={sampleResponse} />
+            <SavedQueriesPanel
+              savedQueries={sampleSaved}
+              selectedSavedQueryId={selectedSavedId}
+              savedQueryName={savedName}
+              onSavedQueryNameChange={setSavedName}
+              savedQuerySchemaVersion={schemaVersion}
+              onSchemaVersionChange={setSchemaVersion}
+              isLoading={false}
+              onReload={() => {}}
+              onRestore={(item) => {
+                setSelectedSavedId(item.id);
+                setSavedName(item.name);
+                setSqlText(item.sql);
+              }}
+              onCreate={() => alert('Create!')}
+              onUpdate={() => alert('Update!')}
+              onDelete={() => alert('Delete!')}
+            />
+          </>
+        )}
+        {activeTab === 'schema' && (
+          <SchemaBrowserPanel
+            tables={sampleTables}
+            tableDetails={sampleTableDetails}
+            expandedTables={schemaExpanded}
+            isLoading={false}
+            onReload={() => {}}
+            onToggleTable={(name) => {
+              setSchemaExpanded((prev) => {
+                const next = new Set(prev);
+                if (next.has(name)) next.delete(name);
+                else next.add(name);
+                return next;
+              });
+            }}
+            onUseInQuery={(sql) => {
+              setSqlText(sql);
+              setActiveTab('query');
             }}
           />
-          <ExecutionStatusPanel uiError={null} queryResponse={sampleResponse} />
-          <ResultsPanel queryResponse={sampleResponse} />
-        </div>
-        <div style={{ display: 'grid', gap: 10 }}>
+        )}
+        {activeTab === 'history' && (
           <QueryHistoryPanel
             historyFilter={historyFilter}
             onFilterChange={setHistoryFilter}
@@ -131,32 +229,19 @@ function FullWorkspace() {
             historyTotal={2}
             isLoading={false}
             onReload={() => {}}
-            onRestore={(item) => setSqlText(item.query_text)}
-          />
-          <SavedQueriesPanel
-            savedQueries={sampleSaved}
-            selectedSavedQueryId={selectedSavedId}
-            savedQueryName={savedName}
-            onSavedQueryNameChange={setSavedName}
-            savedQuerySchemaVersion={schemaVersion}
-            onSchemaVersionChange={setSchemaVersion}
-            isLoading={false}
-            onReload={() => {}}
             onRestore={(item) => {
-              setSelectedSavedId(item.id);
-              setSavedName(item.name);
-              setSqlText(item.sql);
+              setSqlText(item.query_text);
+              setActiveTab('query');
             }}
-            onCreate={() => alert('Create!')}
-            onUpdate={() => alert('Update!')}
-            onDelete={() => alert('Delete!')}
           />
+        )}
+        {activeTab === 'developer' && (
           <IntentDebugPanel
             lastIntentResult={null}
             isExecuting={false}
             onExecuteViaIntent={() => alert('Intent!')}
           />
-        </div>
+        )}
       </WorkspaceLayout>
     </div>
   );
@@ -176,50 +261,29 @@ function ErrorWorkspace() {
         activeRequestId=""
         isExecuting={false}
       />
+      <div data-part="sqlite-tabs">
+        <button data-part="sqlite-tab" data-state="active">Query</button>
+        <button data-part="sqlite-tab">Schema</button>
+        <button data-part="sqlite-tab">History</button>
+        <button data-part="sqlite-tab">Developer</button>
+      </div>
       <WorkspaceLayout>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <QueryEditorPanel
-            sqlText="SELECT * FORM people"
-            onSqlChange={() => {}}
-            rowLimitInput=""
-            onRowLimitChange={() => {}}
-            parameterMode="none"
-            onParameterModeChange={() => {}}
-            paramsEditorText="[]"
-            onParamsChange={() => {}}
-            isExecuting={false}
-            onExecute={() => {}}
-            onCancel={() => {}}
-            onReset={() => {}}
-          />
-          <ExecutionStatusPanel uiError={error} queryResponse={null} />
-          <ResultsPanel queryResponse={null} />
-        </div>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <QueryHistoryPanel
-            historyFilter="all"
-            onFilterChange={() => {}}
-            historyItems={[]}
-            historyTotal={0}
-            isLoading={false}
-            onReload={() => {}}
-            onRestore={() => {}}
-          />
-          <SavedQueriesPanel
-            savedQueries={[]}
-            selectedSavedQueryId=""
-            savedQueryName=""
-            onSavedQueryNameChange={() => {}}
-            savedQuerySchemaVersion="1"
-            onSchemaVersionChange={() => {}}
-            isLoading={false}
-            onReload={() => {}}
-            onRestore={() => {}}
-            onCreate={() => {}}
-            onUpdate={() => {}}
-            onDelete={() => {}}
-          />
-        </div>
+        <QueryEditorPanel
+          sqlText="SELECT * FORM people"
+          onSqlChange={() => {}}
+          rowLimitInput=""
+          onRowLimitChange={() => {}}
+          parameterMode="none"
+          onParameterModeChange={() => {}}
+          paramsEditorText="[]"
+          onParamsChange={() => {}}
+          isExecuting={false}
+          onExecute={() => {}}
+          onCancel={() => {}}
+          onReset={() => {}}
+        />
+        <ExecutionStatusPanel uiError={error} queryResponse={null} />
+        <ResultsPanel queryResponse={null} />
       </WorkspaceLayout>
     </div>
   );
@@ -234,5 +298,5 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const WithData: Story = {};
+export const QueryTab: Story = {};
 export const WithError: Story = { render: () => <ErrorWorkspace /> };

@@ -1,5 +1,6 @@
 export type ParameterMode = 'none' | 'positional' | 'named';
 export type HistoryFilter = 'all' | 'success' | 'error';
+export type WorkspaceTab = 'query' | 'schema' | 'history' | 'developer';
 
 export interface QueryColumn {
   name: string;

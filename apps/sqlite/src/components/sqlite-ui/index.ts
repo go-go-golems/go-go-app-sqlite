@@ -20,4 +20,5 @@ export type {
   SchemaTableDetails,
   SchemaColumnInfo,
   SchemaIndexInfo,
+  WorkspaceTab,
 } from './types';
