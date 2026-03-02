@@ -1,0 +1,3 @@
+packages:
+  - "apps/*"
+  - "../go-go-os-frontend/packages/*"

@@ -1,53 +1,33 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import {
-  SQLITE_HYPERCARD_EXAMPLE_CARD_ACTION,
-  SQLITE_HYPERCARD_EXAMPLE_CARD_NOTE,
-} from '../domain/hypercard/exampleCard';
-import {
-  SQLITE_HYPERCARD_QUERY_INTENT,
-  type SqliteQueryIntentPayload,
-  type SqliteQueryIntentResult,
-} from '../domain/hypercard/intentContract';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { SqliteQueryIntentPayload, SqliteQueryIntentResult } from '../domain/hypercard/intentContract';
 import { handleSqliteQueryIntent } from '../domain/hypercard/runtimeHandlers';
+import {
+  WorkspaceHeader,
+  WorkspaceLayout,
+  QueryEditorPanel,
+  ExecutionStatusPanel,
+  ResultsPanel,
+  QueryHistoryPanel,
+  SavedQueriesPanel,
+  IntentDebugPanel,
+  type ParameterMode,
+  type HistoryFilter,
+  type QueryResponse,
+  type UIErrorState,
+  type QueryHistoryEntry,
+  type SavedQuery,
+} from './sqlite-ui';
+import './sqlite-ui/sqlite-workspace.css';
 
 export interface SqliteWorkspaceWindowProps {
   apiBasePrefix: string;
 }
-
-type ParameterMode = 'none' | 'positional' | 'named';
-type HistoryFilter = 'all' | 'success' | 'error';
 
 interface QueryRequest {
   sql: string;
   positional_params?: unknown[];
   named_params?: Record<string, unknown>;
   row_limit?: number;
-}
-
-interface QueryColumn {
-  name: string;
-  database_type?: string;
-  scan_type?: string;
-}
-
-interface QueryMeta {
-  correlation_id: string;
-  duration_ms: number;
-  row_count: number;
-  effective_row_limit: number;
-  payload_bytes: number;
-  payload_cap_bytes: number;
-  statement_timeout_ms: number;
-  truncated: boolean;
-  truncated_by_row_limit: boolean;
-  truncated_by_payload: boolean;
-  statement_type: string;
-}
-
-interface QueryResponse {
-  columns: QueryColumn[];
-  rows: Record<string, unknown>[];
-  meta: QueryMeta;
 }
 
 interface APIErrorEnvelope {
@@ -58,18 +38,6 @@ interface APIErrorEnvelope {
   };
 }
 
-interface QueryHistoryEntry {
-  id: string;
-  query_text: string;
-  query_preview: string;
-  params_json: string;
-  status: 'success' | 'error' | string;
-  duration_ms: number;
-  row_count: number;
-  error_summary: string;
-  created_at: string;
-}
-
 interface QueryHistoryListResponse {
   items: QueryHistoryEntry[];
   total: number;
@@ -77,25 +45,8 @@ interface QueryHistoryListResponse {
   offset: number;
 }
 
-interface SavedQuery {
-  id: string;
-  name: string;
-  sql: string;
-  positional_params?: unknown[];
-  named_params?: Record<string, unknown>;
-  schema_version: number;
-  created_at: string;
-  updated_at: string;
-}
-
 interface SavedQueryListResponse {
   items: SavedQuery[];
-}
-
-interface UIErrorState {
-  category: string;
-  message: string;
-  correlationId?: string;
 }
 
 interface SavedQueryPayload {
@@ -106,45 +57,19 @@ interface SavedQueryPayload {
   named_params?: Record<string, unknown>;
 }
 
-const panelStyle: CSSProperties = {
-  background: 'linear-gradient(140deg, #ffffff 0%, #f5f7fb 100%)',
-  border: '1px solid #d6dce8',
-  borderRadius: 12,
-  padding: 12,
-  boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
-  display: 'grid',
-  gap: 10,
-};
-
-const buttonStyle: CSSProperties = {
-  border: '1px solid #395078',
-  borderRadius: 8,
-  background: 'linear-gradient(180deg, #f8fafc 0%, #e8eefb 100%)',
-  color: '#1f365d',
-  padding: '6px 10px',
-  cursor: 'pointer',
-  fontSize: 13,
-  fontWeight: 600,
-};
-
-const destructiveButtonStyle: CSSProperties = {
-  ...buttonStyle,
-  borderColor: '#7f1d1d',
-  color: '#7f1d1d',
-  background: 'linear-gradient(180deg, #fff5f5 0%, #ffe5e5 100%)',
-};
-
 export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowProps) {
   const resolvedApiBase = useMemo(() => {
     const value = (apiBasePrefix || '/api/apps/sqlite').trim();
     return value.endsWith('/') ? value.slice(0, -1) : value;
   }, [apiBasePrefix]);
 
+  // ── Editor state ──
   const [sqlText, setSqlText] = useState<string>('SELECT id, name FROM people ORDER BY id LIMIT 20');
   const [rowLimitInput, setRowLimitInput] = useState<string>('');
   const [parameterMode, setParameterMode] = useState<ParameterMode>('none');
   const [paramsEditorText, setParamsEditorText] = useState<string>('[]');
 
+  // ── Execution state ──
   const [queryResponse, setQueryResponse] = useState<QueryResponse | null>(null);
   const [lastIntentResult, setLastIntentResult] = useState<SqliteQueryIntentResult | null>(null);
   const [uiError, setUIError] = useState<UIErrorState | null>(null);
@@ -152,16 +77,20 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
   const [activeRequestId, setActiveRequestId] = useState<string>('');
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
+  // ── History state ──
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
   const [historyItems, setHistoryItems] = useState<QueryHistoryEntry[]>([]);
   const [historyTotal, setHistoryTotal] = useState<number>(0);
   const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
 
+  // ── Saved queries state ──
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
   const [isSavedLoading, setIsSavedLoading] = useState<boolean>(false);
   const [selectedSavedQueryId, setSelectedSavedQueryId] = useState<string>('');
   const [savedQueryName, setSavedQueryName] = useState<string>('');
   const [savedQuerySchemaVersion, setSavedQuerySchemaVersion] = useState<string>('1');
+
+  // ── Data loading ──
 
   const loadHistory = useCallback(async () => {
     setIsHistoryLoading(true);
@@ -203,13 +132,10 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     }
   }, [resolvedApiBase]);
 
-  useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
+  useEffect(() => { void loadHistory(); }, [loadHistory]);
+  useEffect(() => { void loadSavedQueries(); }, [loadSavedQueries]);
 
-  useEffect(() => {
-    void loadSavedQueries();
-  }, [loadSavedQueries]);
+  // ── Query building ──
 
   const buildQueryPayloadsFromEditor = useCallback(
     (): { queryRequest: QueryRequest; intentPayload: SqliteQueryIntentPayload } | null => {
@@ -267,16 +193,13 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     [parameterMode, paramsEditorText, rowLimitInput, sqlText],
   );
 
+  // ── Execution handlers ──
+
   const executeQuery = useCallback(async () => {
     const payloads = buildQueryPayloadsFromEditor();
-    if (!payloads) {
-      return;
-    }
-    const request = payloads.queryRequest;
+    if (!payloads) return;
 
-    if (abortController) {
-      abortController.abort();
-    }
+    if (abortController) abortController.abort();
 
     const controller = new AbortController();
     const requestId = `ui-${Date.now()}`;
@@ -288,11 +211,8 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     try {
       const response = await fetch(`${resolvedApiBase}/query`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Request-ID': requestId,
-        },
-        body: JSON.stringify(request),
+        headers: { 'Content-Type': 'application/json', 'X-Request-ID': requestId },
+        body: JSON.stringify(payloads.queryRequest),
         signal: controller.signal,
       });
       const body = (await response.json()) as QueryResponse & APIErrorEnvelope;
@@ -326,12 +246,8 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
 
   const executeViaIntentBridge = useCallback(async () => {
     const payloads = buildQueryPayloadsFromEditor();
-    if (!payloads) {
-      return;
-    }
-    if (abortController) {
-      abortController.abort();
-    }
+    if (!payloads) return;
+    if (abortController) abortController.abort();
 
     setAbortController(null);
     setIsExecuting(true);
@@ -340,9 +256,7 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
 
     try {
       const result = await handleSqliteQueryIntent(
-        {
-          apiBasePrefix: resolvedApiBase,
-        },
+        { apiBasePrefix: resolvedApiBase },
         payloads.intentPayload,
       );
       setLastIntentResult(result);
@@ -355,12 +269,9 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
         });
         return;
       }
-
       setQueryResponse({
-        columns: result.data.columns.map((column) => ({
-          name: column.name,
-          database_type: column.databaseType,
-          scan_type: column.scanType,
+        columns: result.data.columns.map((c) => ({
+          name: c.name, database_type: c.databaseType, scan_type: c.scanType,
         })),
         rows: result.data.rows,
         meta: {
@@ -385,9 +296,7 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
   }, [abortController, buildQueryPayloadsFromEditor, loadHistory, resolvedApiBase]);
 
   const cancelExecution = useCallback(() => {
-    if (abortController) {
-      abortController.abort();
-    }
+    if (abortController) abortController.abort();
   }, [abortController]);
 
   const resetEditor = useCallback(() => {
@@ -399,6 +308,8 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     setSavedQueryName('');
     setSavedQuerySchemaVersion('1');
   }, []);
+
+  // ── Restore handlers ──
 
   const restoreParamsFromJSON = useCallback((raw: string): { mode: ParameterMode; text: string } => {
     try {
@@ -447,6 +358,8 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     setParamsEditorText('[]');
   }, []);
 
+  // ── Saved query CRUD ──
+
   const buildSavedQueryPayload = useCallback((): SavedQueryPayload | null => {
     const trimmedName = savedQueryName.trim();
     const trimmedSQL = sqlText.trim();
@@ -458,25 +371,20 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       setUIError({ category: 'validation', message: 'SQL text is required before saving a query.' });
       return null;
     }
-
     const schemaVersion = Number(savedQuerySchemaVersion.trim() || '1');
     if (!Number.isFinite(schemaVersion) || schemaVersion <= 0) {
       setUIError({ category: 'validation', message: 'Schema version must be a positive integer.' });
       return null;
     }
-
     const payload: SavedQueryPayload = {
       name: trimmedName,
       sql: trimmedSQL,
       schema_version: Math.floor(schemaVersion),
     };
-
     try {
       if (parameterMode === 'positional') {
         const parsed = JSON.parse(paramsEditorText || '[]') as unknown;
-        if (!Array.isArray(parsed)) {
-          throw new Error('Positional parameters must be a JSON array.');
-        }
+        if (!Array.isArray(parsed)) throw new Error('Positional parameters must be a JSON array.');
         payload.positional_params = parsed;
       }
       if (parameterMode === 'named') {
@@ -493,16 +401,12 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       });
       return null;
     }
-
     return payload;
   }, [parameterMode, paramsEditorText, savedQueryName, savedQuerySchemaVersion, sqlText]);
 
   const createSavedQuery = useCallback(async () => {
     const payload = buildSavedQueryPayload();
-    if (!payload) {
-      return;
-    }
-
+    if (!payload) return;
     try {
       const response = await fetch(`${resolvedApiBase}/saved-queries`, {
         method: 'POST',
@@ -518,9 +422,7 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
         });
         return;
       }
-
-      const created = body as SavedQuery;
-      setSelectedSavedQueryId(created.id);
+      setSelectedSavedQueryId((body as SavedQuery).id);
       setUIError(null);
       await loadSavedQueries();
     } catch (error) {
@@ -537,10 +439,7 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       return;
     }
     const payload = buildSavedQueryPayload();
-    if (!payload) {
-      return;
-    }
-
+    if (!payload) return;
     try {
       const response = await fetch(`${resolvedApiBase}/saved-queries/${selectedSavedQueryId}`, {
         method: 'PUT',
@@ -556,7 +455,6 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
         });
         return;
       }
-
       setUIError(null);
       await loadSavedQueries();
     } catch (error) {
@@ -572,7 +470,6 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
       setUIError({ category: 'validation', message: 'Select a saved query to delete.' });
       return;
     }
-
     try {
       const response = await fetch(`${resolvedApiBase}/saved-queries/${selectedSavedQueryId}`, {
         method: 'DELETE',
@@ -586,7 +483,6 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
         });
         return;
       }
-
       setSelectedSavedQueryId('');
       setSavedQueryName('');
       setSavedQuerySchemaVersion('1');
@@ -600,343 +496,84 @@ export function SqliteWorkspaceWindow({ apiBasePrefix }: SqliteWorkspaceWindowPr
     }
   }, [loadSavedQueries, resolvedApiBase, selectedSavedQueryId]);
 
+  // ── Escape to cancel ──
+  useEffect(() => {
+    if (!isExecuting) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelExecution();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isExecuting, cancelExecution]);
+
+  // ── Render ──
+
   return (
-    <section
-      style={{
-        padding: 12,
-        display: 'grid',
-        gap: 12,
-        height: '100%',
-        alignContent: 'start',
-        background: 'radial-gradient(circle at 10% 0%, #eef4ff 0%, #f8fbff 45%, #fdfdff 100%)',
-        color: '#0f172a',
-      }}
-    >
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20 }}>SQLite Query Workbench</h2>
-          <div style={{ fontSize: 12, color: '#334155' }}>API base: <code>{resolvedApiBase}</code></div>
-        </div>
-        <div style={{ display: 'grid', gap: 4, textAlign: 'right' }}>
-          <span style={{ fontSize: 12, color: '#334155' }}>Active request ID: <code>{activeRequestId || 'n/a'}</code></span>
-          <span style={{ fontSize: 12, color: isExecuting ? '#9a3412' : '#065f46' }}>
-            {isExecuting ? 'Executing query...' : 'Idle'}
-          </span>
-        </div>
-      </header>
+    <div data-part="sqlite-workspace">
+      <WorkspaceHeader
+        apiBase={resolvedApiBase}
+        activeRequestId={activeRequestId}
+        isExecuting={isExecuting}
+      />
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <section style={panelStyle}>
-            <strong>Query Editor</strong>
-            <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-              SQL
-              <textarea
-                value={sqlText}
-                onChange={(event) => setSqlText(event.target.value)}
-                rows={8}
-                style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', borderRadius: 8, border: '1px solid #b7c2d6', padding: 8 }}
-                placeholder="SELECT * FROM your_table WHERE id = ?"
-                disabled={isExecuting}
-              />
-            </label>
+      <WorkspaceLayout>
+        <div style={{ display: 'grid', gap: 10 }}>
+          <QueryEditorPanel
+            sqlText={sqlText}
+            onSqlChange={setSqlText}
+            rowLimitInput={rowLimitInput}
+            onRowLimitChange={setRowLimitInput}
+            parameterMode={parameterMode}
+            onParameterModeChange={setParameterMode}
+            paramsEditorText={paramsEditorText}
+            onParamsChange={setParamsEditorText}
+            isExecuting={isExecuting}
+            onExecute={() => void executeQuery()}
+            onCancel={cancelExecution}
+            onReset={resetEditor}
+          />
 
-            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr 1fr' }}>
-              <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                Row Limit (optional)
-                <input
-                  value={rowLimitInput}
-                  onChange={(event) => setRowLimitInput(event.target.value)}
-                  placeholder="e.g. 50"
-                  disabled={isExecuting}
-                  style={{ borderRadius: 8, border: '1px solid #b7c2d6', padding: 7 }}
-                />
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                Parameter Mode
-                <select
-                  value={parameterMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as ParameterMode;
-                    setParameterMode(nextMode);
-                    if (nextMode === 'none') {
-                      setParamsEditorText('[]');
-                    }
-                    if (nextMode === 'named') {
-                      setParamsEditorText('{}');
-                    }
-                    if (nextMode === 'positional') {
-                      setParamsEditorText('[]');
-                    }
-                  }}
-                  disabled={isExecuting}
-                  style={{ borderRadius: 8, border: '1px solid #b7c2d6', padding: 7 }}
-                >
-                  <option value="none">None</option>
-                  <option value="positional">Positional (JSON array)</option>
-                  <option value="named">Named (JSON object)</option>
-                </select>
-              </label>
-            </div>
+          <ExecutionStatusPanel
+            uiError={uiError}
+            queryResponse={queryResponse}
+          />
 
-            {parameterMode !== 'none' ? (
-              <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                {parameterMode === 'positional' ? 'Positional Params JSON' : 'Named Params JSON'}
-                <textarea
-                  value={paramsEditorText}
-                  onChange={(event) => setParamsEditorText(event.target.value)}
-                  rows={5}
-                  disabled={isExecuting}
-                  style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', borderRadius: 8, border: '1px solid #b7c2d6', padding: 8 }}
-                />
-              </label>
-            ) : null}
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <button type="button" style={buttonStyle} onClick={() => void executeQuery()} disabled={isExecuting}>
-                Execute Query
-              </button>
-              <button type="button" style={buttonStyle} onClick={() => void executeViaIntentBridge()} disabled={isExecuting}>
-                Execute via Intent Bridge
-              </button>
-              <button type="button" style={buttonStyle} onClick={resetEditor} disabled={isExecuting}>
-                Clear / Reset
-              </button>
-              <button type="button" style={destructiveButtonStyle} onClick={cancelExecution} disabled={!isExecuting}>
-                Cancel Request
-              </button>
-            </div>
-          </section>
-
-          <section style={panelStyle}>
-            <strong>Status & Errors</strong>
-            {uiError ? (
-              <div style={{ borderRadius: 8, border: '1px solid #fecaca', background: '#fff1f2', color: '#7f1d1d', padding: 10, fontSize: 13 }}>
-                <div><strong>{uiError.category.toUpperCase()}</strong></div>
-                <div>{uiError.message}</div>
-                {uiError.correlationId ? <div>Correlation ID: <code>{uiError.correlationId}</code></div> : null}
-              </div>
-            ) : queryResponse ? (
-              <div style={{ borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#14532d', padding: 10, fontSize: 13 }}>
-                <div><strong>Query completed</strong></div>
-                <div>Statement: {queryResponse.meta.statement_type}</div>
-                <div>Rows: {queryResponse.meta.row_count}</div>
-                <div>Duration: {queryResponse.meta.duration_ms}ms</div>
-                <div>Correlation ID: <code>{queryResponse.meta.correlation_id}</code></div>
-              </div>
-            ) : (
-              <span style={{ fontSize: 13, color: '#475569' }}>No query executed yet.</span>
-            )}
-            {lastIntentResult ? (
-              <div style={{ borderRadius: 8, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e3a8a', padding: 10, fontSize: 12 }}>
-                <div><strong>Last Intent Result</strong></div>
-                <div>Intent: <code>{SQLITE_HYPERCARD_QUERY_INTENT}</code></div>
-                <div>
-                  Outcome:{' '}
-                  {lastIntentResult.ok
-                    ? `ok (rows=${lastIntentResult.data.meta.rowCount}, duration=${lastIntentResult.data.meta.durationMs}ms)`
-                    : `error (${lastIntentResult.error.category})`}
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          <section style={panelStyle}>
-            <strong>Results</strong>
-            {!queryResponse ? (
-              <span style={{ fontSize: 13, color: '#475569' }}>Run a query to view columns and rows.</span>
-            ) : (
-              <>
-                {queryResponse.meta.truncated ? (
-                  <div style={{ borderRadius: 8, border: '1px solid #fcd34d', background: '#fff7ed', color: '#92400e', padding: 8, fontSize: 12 }}>
-                    Result truncated.
-                    {queryResponse.meta.truncated_by_row_limit ? ' Hit row limit.' : ''}
-                    {queryResponse.meta.truncated_by_payload ? ' Hit payload-size cap.' : ''}
-                  </div>
-                ) : null}
-                <div style={{ overflowX: 'auto', border: '1px solid #d6dce8', borderRadius: 8 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ background: '#e9efff' }}>
-                        {queryResponse.columns.map((column) => (
-                          <th key={column.name} style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #d6dce8' }}>
-                            <div>{column.name}</div>
-                            <div style={{ fontSize: 10, color: '#475569' }}>{column.database_type || 'UNKNOWN'}</div>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {queryResponse.rows.length === 0 ? (
-                        <tr>
-                          <td colSpan={Math.max(queryResponse.columns.length, 1)} style={{ padding: 8, color: '#64748b' }}>
-                            No rows returned.
-                          </td>
-                        </tr>
-                      ) : (
-                        queryResponse.rows.map((row, rowIndex) => (
-                          <tr key={`${rowIndex}-${queryResponse.meta.correlation_id}`} style={{ borderBottom: '1px solid #edf1f7' }}>
-                            {queryResponse.columns.map((column) => (
-                              <td key={`${rowIndex}-${column.name}`} style={{ padding: 8, verticalAlign: 'top', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
-                                {String(row[column.name] ?? 'NULL')}
-                              </td>
-                            ))}
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </section>
+          <ResultsPanel queryResponse={queryResponse} />
         </div>
 
-        <div style={{ display: 'grid', gap: 12 }}>
-          <section style={panelStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <strong>Query History</strong>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <select
-                  value={historyFilter}
-                  onChange={(event) => setHistoryFilter(event.target.value as HistoryFilter)}
-                  style={{ borderRadius: 8, border: '1px solid #b7c2d6', padding: 5, fontSize: 12 }}
-                >
-                  <option value="all">All</option>
-                  <option value="success">Success</option>
-                  <option value="error">Error</option>
-                </select>
-                <button type="button" style={buttonStyle} onClick={() => void loadHistory()} disabled={isHistoryLoading}>
-                  Reload
-                </button>
-              </div>
-            </div>
-            <span style={{ fontSize: 12, color: '#475569' }}>Total entries: {historyTotal}</span>
-            <div style={{ display: 'grid', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
-              {historyItems.map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => restoreFromHistory(entry)}
-                  style={{
-                    textAlign: 'left',
-                    borderRadius: 8,
-                    border: '1px solid #d6dce8',
-                    background: '#ffffff',
-                    padding: 8,
-                    cursor: 'pointer',
-                    display: 'grid',
-                    gap: 3,
-                    fontSize: 12,
-                  }}
-                >
-                  <span style={{ fontWeight: 700, color: entry.status === 'success' ? '#166534' : '#991b1b' }}>{entry.status}</span>
-                  <span>{entry.query_preview || entry.query_text.slice(0, 120)}</span>
-                  <span style={{ color: '#64748b' }}>rows={entry.row_count} duration={entry.duration_ms}ms</span>
-                </button>
-              ))}
-              {historyItems.length === 0 ? <span style={{ fontSize: 12, color: '#64748b' }}>No history entries yet.</span> : null}
-            </div>
-          </section>
+        <div style={{ display: 'grid', gap: 10 }}>
+          <QueryHistoryPanel
+            historyFilter={historyFilter}
+            onFilterChange={setHistoryFilter}
+            historyItems={historyItems}
+            historyTotal={historyTotal}
+            isLoading={isHistoryLoading}
+            onReload={() => void loadHistory()}
+            onRestore={restoreFromHistory}
+          />
 
-          <section style={panelStyle}>
-            <strong>Saved Queries</strong>
-            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr 120px' }}>
-              <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                Name
-                <input
-                  value={savedQueryName}
-                  onChange={(event) => setSavedQueryName(event.target.value)}
-                  placeholder="Weekly Sales Snapshot"
-                  style={{ borderRadius: 8, border: '1px solid #b7c2d6', padding: 7 }}
-                />
-              </label>
-              <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-                Schema Version
-                <input
-                  value={savedQuerySchemaVersion}
-                  onChange={(event) => setSavedQuerySchemaVersion(event.target.value)}
-                  style={{ borderRadius: 8, border: '1px solid #b7c2d6', padding: 7 }}
-                />
-              </label>
-            </div>
+          <SavedQueriesPanel
+            savedQueries={savedQueries}
+            selectedSavedQueryId={selectedSavedQueryId}
+            savedQueryName={savedQueryName}
+            onSavedQueryNameChange={setSavedQueryName}
+            savedQuerySchemaVersion={savedQuerySchemaVersion}
+            onSchemaVersionChange={setSavedQuerySchemaVersion}
+            isLoading={isSavedLoading}
+            onReload={() => void loadSavedQueries()}
+            onRestore={restoreFromSaved}
+            onCreate={() => void createSavedQuery()}
+            onUpdate={() => void updateSavedQuery()}
+            onDelete={() => void deleteSavedQuery()}
+          />
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <button type="button" style={buttonStyle} onClick={() => void createSavedQuery()}>
-                Create Saved
-              </button>
-              <button type="button" style={buttonStyle} onClick={() => void updateSavedQuery()} disabled={!selectedSavedQueryId}>
-                Update Selected
-              </button>
-              <button type="button" style={destructiveButtonStyle} onClick={() => void deleteSavedQuery()} disabled={!selectedSavedQueryId}>
-                Delete Selected
-              </button>
-              <button type="button" style={buttonStyle} onClick={() => void loadSavedQueries()} disabled={isSavedLoading}>
-                Reload
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
-              {savedQueries.map((saved) => (
-                <button
-                  key={saved.id}
-                  type="button"
-                  onClick={() => restoreFromSaved(saved)}
-                  style={{
-                    textAlign: 'left',
-                    borderRadius: 8,
-                    border: saved.id === selectedSavedQueryId ? '1px solid #1d4ed8' : '1px solid #d6dce8',
-                    background: saved.id === selectedSavedQueryId ? '#e8f0ff' : '#ffffff',
-                    padding: 8,
-                    cursor: 'pointer',
-                    display: 'grid',
-                    gap: 3,
-                    fontSize: 12,
-                  }}
-                >
-                  <span style={{ fontWeight: 700 }}>{saved.name}</span>
-                  <span style={{ color: '#475569' }}>schema={saved.schema_version} updated={saved.updated_at}</span>
-                  <code style={{ fontSize: 11 }}>{saved.sql.slice(0, 120)}</code>
-                </button>
-              ))}
-              {savedQueries.length === 0 ? <span style={{ fontSize: 12, color: '#64748b' }}>No saved queries yet.</span> : null}
-            </div>
-          </section>
-
-          <section style={panelStyle}>
-            <strong>HyperCard Intent Contract</strong>
-            <span style={{ fontSize: 12, color: '#475569' }}>
-              Intent name: <code>{SQLITE_HYPERCARD_QUERY_INTENT}</code>
-            </span>
-            <pre
-              style={{
-                margin: 0,
-                padding: 10,
-                borderRadius: 8,
-                border: '1px solid #d6dce8',
-                background: '#f8fafc',
-                fontSize: 11,
-                overflowX: 'auto',
-              }}
-            >
-              {JSON.stringify(SQLITE_HYPERCARD_EXAMPLE_CARD_ACTION, null, 2)}
-            </pre>
-            <pre
-              style={{
-                margin: 0,
-                padding: 10,
-                borderRadius: 8,
-                border: '1px dashed #cbd5e1',
-                background: '#ffffff',
-                fontSize: 11,
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {SQLITE_HYPERCARD_EXAMPLE_CARD_NOTE}
-            </pre>
-          </section>
+          <IntentDebugPanel
+            lastIntentResult={lastIntentResult}
+            isExecuting={isExecuting}
+            onExecuteViaIntent={() => void executeViaIntentBridge()}
+          />
         </div>
-      </div>
-    </section>
+      </WorkspaceLayout>
+    </div>
   );
 }
