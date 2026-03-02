@@ -107,6 +107,8 @@ func errorStatusCodeForError(category ErrorCategory, err error) int {
 		return 400
 	case ErrorCategoryTimeout:
 		return 504
+	case ErrorCategoryExecution:
+		return 500
 	default:
 		return 500
 	}

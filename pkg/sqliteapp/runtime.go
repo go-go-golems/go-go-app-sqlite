@@ -165,7 +165,7 @@ func ensureDBPath(config Config) error {
 		}
 	}
 
-	f, err := os.OpenFile(dbPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(dbPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		if os.IsExist(err) {
 			return ensureWritable(dbPath)
