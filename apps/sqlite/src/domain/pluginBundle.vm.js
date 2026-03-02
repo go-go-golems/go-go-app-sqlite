@@ -127,12 +127,12 @@ defineStackBundle(({ ui }) => {
               ui.input(asString(state.paramsJSON), { onChange: { handler: 'setParams' } }),
             ]),
             ui.row([
-              ui.button('Execute', { onClick: { handler: 'runQuery' } }),
+              ui.button('Execute Query', { onClick: { handler: 'runQuery' } }),
               ui.button('View Results', { onClick: { handler: 'go', args: { cardId: 'results' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
-            ui.badge(`Queue: ${queueDepth}`),
-            running ? ui.badge(`Running: ${running}`) : ui.text('Runner idle'),
+            ui.badge(`Queued: ${queueDepth}`),
+            running ? ui.badge(`Executing ${running}\u2026`) : ui.text('Idle'),
           ]);
         },
         handlers: {
@@ -185,7 +185,7 @@ defineStackBundle(({ ui }) => {
             message ? ui.badge(`Error: ${message}`) : ui.text('No error'),
             asArray(data.columns).length > 0
               ? ui.table(data.rows, { headers: data.columns })
-              : ui.text('No rows yet. Run a query first.'),
+              : ui.text('No results yet. Execute a query to see results here.'),
             ui.row([
               ui.text(`Rows: ${asNumber(meta.rowCount, 0)}`),
               ui.text(`Statement: ${asString(meta.statementType, 'N/A')}`),
@@ -223,14 +223,14 @@ defineStackBundle(({ ui }) => {
             ui.text('Seed Database'),
             ui.text('Runs a deterministic sample seed pipeline through /query.'),
             ui.row([
-              ui.button('Run Seed', { onClick: { handler: 'runSeed' } }),
+              ui.button('Run Seed Pipeline', { onClick: { handler: 'runSeed' } }),
               ui.button('Go To Query', { onClick: { handler: 'go', args: { cardId: 'query' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
-            ui.badge(`Queue: ${queueDepth}`),
-            running ? ui.badge(`Running: ${running}`) : ui.text('Runner idle'),
-            lastSeedAt ? ui.text(`Last completed: ${lastSeedAt}`) : ui.text('No seed run completed yet.'),
-            steps.length > 0 ? ui.table(steps, { headers: ['#', 'Step', 'Status'] }) : ui.text('No seed report yet.'),
+            ui.badge(`Queued: ${queueDepth}`),
+            running ? ui.badge(`Executing ${running}\u2026`) : ui.text('Idle'),
+            lastSeedAt ? ui.text(`Last completed: ${lastSeedAt}`) : ui.text('No seed runs yet. Click Run Seed Pipeline to populate the database with sample data.'),
+            steps.length > 0 ? ui.table(steps, { headers: ['#', 'Step', 'Status'] }) : ui.text('No seed report yet. Run the pipeline to see step results.'),
           ]);
         },
         handlers: {
