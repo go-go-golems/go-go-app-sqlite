@@ -148,8 +148,6 @@ export function SqliteHypercardIntentRunner({ apiBasePrefix }: SqliteHypercardIn
       return;
     }
 
-    let finished = false;
-
     const run = async () => {
       if (claimed.kind === 'query') {
         const result = await handleSqliteQueryIntent(
@@ -179,7 +177,6 @@ export function SqliteHypercardIntentRunner({ apiBasePrefix }: SqliteHypercardIn
             }),
           );
         }
-        finished = true;
         return;
       }
 
@@ -203,7 +200,6 @@ export function SqliteHypercardIntentRunner({ apiBasePrefix }: SqliteHypercardIn
           }),
         );
       }
-      finished = true;
     };
 
     void run().catch((error: unknown) => {
@@ -214,21 +210,13 @@ export function SqliteHypercardIntentRunner({ apiBasePrefix }: SqliteHypercardIn
           error: buildExecutionError(error instanceof Error ? error.message : String(error)),
         }),
       );
-      finished = true;
     });
 
-    return () => {
-      if (finished) {
-        return;
-      }
-      dispatch(
-        sqliteLauncherActions.failHypercardJob({
-          jobId: nextJobID,
-          runnerId: runnerID,
-          error: buildExecutionError('sqlite hypercard runner unmounted before completing active job'),
-        }),
-      );
-    };
+    // No cleanup failure dispatch — if the component unmounts while a job
+    // is still in-flight (e.g. card navigation via nav.go), the async
+    // operation will complete in the background and dispatch its result
+    // to Redux regardless of React mount state.
+    return undefined;
   }, [apiBase, dispatch, nextJobID, runnerID, store]);
 
   return null;
