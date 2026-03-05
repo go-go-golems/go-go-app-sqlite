@@ -1,11 +1,13 @@
 import type { LaunchReason } from '@hypercard/desktop-os';
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createAction, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type {
   SqliteQueryIntentPayload,
 } from './intentContract';
 
 export const SQLITE_HYPERCARD_QUERY_ACTION_TYPE = 'sqlite/query.execute';
 export const SQLITE_HYPERCARD_SEED_ACTION_TYPE = 'sqlite/seed.execute';
+export const sqliteHypercardQueryIntent = createAction<SqliteQueryIntentPayload>(SQLITE_HYPERCARD_QUERY_ACTION_TYPE);
+export const sqliteHypercardSeedIntent = createAction<SqliteSeedIntentPayload>(SQLITE_HYPERCARD_SEED_ACTION_TYPE);
 
 export interface SqliteSeedIntentPayload {
   profile?: string;
@@ -257,7 +259,7 @@ export const sqliteLauncherSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    builder.addCase(SQLITE_HYPERCARD_QUERY_ACTION_TYPE, (state, action: PayloadAction<SqliteQueryIntentPayload>) => {
+    builder.addCase(sqliteHypercardQueryIntent, (state, action) => {
       const payload = action.payload;
       if (!payload || typeof payload.sql !== 'string' || payload.sql.trim().length === 0) {
         return;
@@ -279,7 +281,7 @@ export const sqliteLauncherSlice = createSlice({
         runningBy: null,
       });
     });
-    builder.addCase(SQLITE_HYPERCARD_SEED_ACTION_TYPE, (state, action: PayloadAction<SqliteSeedIntentPayload>) => {
+    builder.addCase(sqliteHypercardSeedIntent, (state, action) => {
       const payload = action.payload ?? {};
       const enqueuedAt = nowISO();
       enqueueJob(state, {
