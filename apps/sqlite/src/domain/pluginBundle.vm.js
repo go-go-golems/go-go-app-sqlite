@@ -8,45 +8,46 @@ defineStackBundle(({ ui }) => {
     return Array.isArray(value) ? value : [];
   }
 
-  function asString(value, fallback = '') {
-    return typeof value === 'string' ? value : fallback;
+  function toText(value, fallback = '') {
+    if (value === null || value === undefined) return fallback;
+    return String(value);
   }
 
-  function asNumber(value, fallback = 0) {
+  function toNumber(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
-  function getDomains(globalState) {
-    return asRecord(asRecord(globalState).domains);
+  function draftState(state) {
+    return asRecord(asRecord(state).draft);
   }
 
-  function getSqliteDomain(globalState) {
-    return asRecord(getDomains(globalState).app_sqlite);
+  function sqliteDomain(state) {
+    return asRecord(asRecord(state).app_sqlite);
   }
 
-  function getHypercardState(globalState) {
-    return asRecord(getSqliteDomain(globalState).hypercard);
+  function hypercardState(state) {
+    return asRecord(sqliteDomain(state).hypercard);
   }
 
-  function getQueryResult(globalState) {
-    return asRecord(getHypercardState(globalState).lastQueryResult);
+  function queryResult(state) {
+    return asRecord(hypercardState(state).lastQueryResult);
   }
 
-  function getQueryError(globalState) {
-    return asRecord(getHypercardState(globalState).lastQueryError);
+  function queryError(state) {
+    return asRecord(hypercardState(state).lastQueryError);
   }
 
-  function getSeedReport(globalState) {
-    return asRecord(getHypercardState(globalState).lastSeedReport);
+  function seedReport(state) {
+    return asRecord(hypercardState(state).lastSeedReport);
   }
 
-  function getStatus(globalState) {
-    return asRecord(getHypercardState(globalState).status);
+  function statusState(state) {
+    return asRecord(hypercardState(state).status);
   }
 
   function parseParams(text) {
-    const trimmed = asString(text).trim();
+    const trimmed = toText(text).trim();
     if (!trimmed) return {};
 
     try {
@@ -64,7 +65,7 @@ defineStackBundle(({ ui }) => {
   }
 
   function buildRowsFromResult(result) {
-    const columns = asArray(result.columns).map((column) => asString(asRecord(column).name));
+    const columns = asArray(result.columns).map((column) => toText(asRecord(column).name));
     const rows = asArray(result.rows).map((row) =>
       columns.map((column) => {
         const value = asRecord(row)[column];
@@ -74,6 +75,26 @@ defineStackBundle(({ ui }) => {
       }),
     );
     return { columns, rows };
+  }
+
+  function setDraft(context, path, value) {
+    context.dispatch({ type: 'draft.set', payload: { path, value } });
+  }
+
+  function navigate(context, cardId) {
+    context.dispatch({ type: 'nav.go', payload: { cardId: toText(cardId, 'home') } });
+  }
+
+  function goBack(context) {
+    context.dispatch({ type: 'nav.back' });
+  }
+
+  function notify(context, message) {
+    context.dispatch({ type: 'notify.show', payload: { message: toText(message) } });
+  }
+
+  function dispatchSqlite(context, actionType, payload) {
+    context.dispatch({ type: 'sqlite/' + actionType, payload });
   }
 
   return {
@@ -100,95 +121,95 @@ defineStackBundle(({ ui }) => {
           ]);
         },
         handlers: {
-          go({ dispatchSystemCommand }, args) {
-            dispatchSystemCommand('nav.go', { cardId: asString(asRecord(args).cardId, 'home') });
+          go(context, args) {
+            navigate(context, asRecord(args).cardId);
           },
         },
       },
 
       query: {
-        render({ cardState, globalState }) {
-          const state = asRecord(cardState);
-          const status = getStatus(globalState);
-          const queueDepth = asNumber(status.queueDepth, 0);
-          const running = asString(status.runningJobType);
+        render({ state }) {
+          const draft = draftState(state);
+          const status = statusState(state);
+          const queueDepth = toNumber(status.queueDepth, 0);
+          const running = toText(status.runningJobType);
           return ui.panel([
             ui.text('Run SQLite Query'),
             ui.row([
               ui.text('SQL:'),
-              ui.input(asString(state.sql), { onChange: { handler: 'setSql' } }),
+              ui.input(toText(draft.sql), { onChange: { handler: 'setSql' } }),
             ]),
             ui.row([
               ui.text('Row Limit:'),
-              ui.input(asString(state.rowLimit), { onChange: { handler: 'setRowLimit' } }),
+              ui.input(toText(draft.rowLimit), { onChange: { handler: 'setRowLimit' } }),
             ]),
             ui.row([
               ui.text('Params JSON:'),
-              ui.input(asString(state.paramsJSON), { onChange: { handler: 'setParams' } }),
+              ui.input(toText(draft.paramsJSON), { onChange: { handler: 'setParams' } }),
             ]),
             ui.row([
               ui.button('Execute Query', { onClick: { handler: 'runQuery' } }),
               ui.button('View Results', { onClick: { handler: 'go', args: { cardId: 'results' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
-            ui.badge(`Queued: ${queueDepth}`),
-            running ? ui.badge(`Executing ${running}\u2026`) : ui.text('Idle'),
+            ui.badge('Queued: ' + queueDepth),
+            running ? ui.badge('Executing ' + running + '\u2026') : ui.text('Idle'),
           ]);
         },
         handlers: {
-          setSql({ dispatchCardAction }, args) {
-            dispatchCardAction('set', { path: 'sql', value: asString(asRecord(args).value) });
+          setSql(context, args) {
+            setDraft(context, 'sql', asRecord(args).value);
           },
-          setRowLimit({ dispatchCardAction }, args) {
-            dispatchCardAction('set', { path: 'rowLimit', value: asString(asRecord(args).value) });
+          setRowLimit(context, args) {
+            setDraft(context, 'rowLimit', asRecord(args).value);
           },
-          setParams({ dispatchCardAction }, args) {
-            dispatchCardAction('set', { path: 'paramsJSON', value: asString(asRecord(args).value) });
+          setParams(context, args) {
+            setDraft(context, 'paramsJSON', asRecord(args).value);
           },
-          runQuery({ cardState, dispatchDomainAction, dispatchSystemCommand }) {
-            const state = asRecord(cardState);
-            const sql = asString(state.sql).trim();
+          runQuery(context) {
+            const draft = draftState(context.state);
+            const sql = toText(draft.sql).trim();
             if (!sql) {
-              dispatchSystemCommand('notify', { message: 'SQL is required.' });
+              notify(context, 'SQL is required.');
               return;
             }
 
             const payload = { sql };
-            const rowLimit = asNumber(state.rowLimit, 0);
+            const rowLimit = toNumber(draft.rowLimit, 0);
             if (rowLimit > 0) {
               payload.rowLimit = rowLimit;
             }
-            Object.assign(payload, parseParams(state.paramsJSON));
+            Object.assign(payload, parseParams(draft.paramsJSON));
 
-            dispatchDomainAction('sqlite', 'query.execute', payload);
-            dispatchSystemCommand('nav.go', { cardId: 'results' });
+            dispatchSqlite(context, 'query.execute', payload);
+            navigate(context, 'results');
           },
-          go({ dispatchSystemCommand }, args) {
-            dispatchSystemCommand('nav.go', { cardId: asString(asRecord(args).cardId, 'home') });
+          go(context, args) {
+            navigate(context, asRecord(args).cardId);
           },
-          back({ dispatchSystemCommand }) {
-            dispatchSystemCommand('nav.back');
+          back(context) {
+            goBack(context);
           },
         },
       },
 
       results: {
-        render({ globalState }) {
-          const result = getQueryResult(globalState);
-          const error = getQueryError(globalState);
+        render({ state }) {
+          const result = queryResult(state);
+          const error = queryError(state);
           const data = buildRowsFromResult(result);
           const meta = asRecord(result.meta);
-          const message = asString(error.message);
+          const message = toText(error.message);
 
           return ui.panel([
             ui.text('Query Results'),
-            message ? ui.badge(`Error: ${message}`) : ui.text('No error'),
+            message ? ui.badge('Error: ' + message) : ui.text('No error'),
             asArray(data.columns).length > 0
               ? ui.table(data.rows, { headers: data.columns })
               : ui.text('No results yet. Execute a query to see results here.'),
             ui.row([
-              ui.text(`Rows: ${asNumber(meta.rowCount, 0)}`),
-              ui.text(`Statement: ${asString(meta.statementType, 'N/A')}`),
+              ui.text('Rows: ' + toNumber(meta.rowCount, 0)),
+              ui.text('Statement: ' + toText(meta.statementType, 'N/A')),
             ]),
             ui.row([
               ui.button('Run Another Query', { onClick: { handler: 'go', args: { cardId: 'query' } } }),
@@ -197,26 +218,26 @@ defineStackBundle(({ ui }) => {
           ]);
         },
         handlers: {
-          go({ dispatchSystemCommand }, args) {
-            dispatchSystemCommand('nav.go', { cardId: asString(asRecord(args).cardId, 'home') });
+          go(context, args) {
+            navigate(context, asRecord(args).cardId);
           },
-          back({ dispatchSystemCommand }) {
-            dispatchSystemCommand('nav.back');
+          back(context) {
+            goBack(context);
           },
         },
       },
 
       seed: {
-        render({ globalState }) {
-          const report = getSeedReport(globalState);
-          const status = getStatus(globalState);
-          const lastSeedAt = asString(report.completedAt);
-          const queueDepth = asNumber(status.queueDepth, 0);
-          const running = asString(status.runningJobType);
+        render({ state }) {
+          const report = seedReport(state);
+          const status = statusState(state);
+          const lastSeedAt = toText(report.completedAt);
+          const queueDepth = toNumber(status.queueDepth, 0);
+          const running = toText(status.runningJobType);
           const steps = asArray(report.steps).map((step, index) => [
             String(index + 1),
-            asString(asRecord(step).label, 'step'),
-            asString(asRecord(step).status, 'unknown'),
+            toText(asRecord(step).label, 'step'),
+            toText(asRecord(step).status, 'unknown'),
           ]);
 
           return ui.panel([
@@ -227,21 +248,25 @@ defineStackBundle(({ ui }) => {
               ui.button('Go To Query', { onClick: { handler: 'go', args: { cardId: 'query' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
-            ui.badge(`Queued: ${queueDepth}`),
-            running ? ui.badge(`Executing ${running}\u2026`) : ui.text('Idle'),
-            lastSeedAt ? ui.text(`Last completed: ${lastSeedAt}`) : ui.text('No seed runs yet. Click Run Seed Pipeline to populate the database with sample data.'),
-            steps.length > 0 ? ui.table(steps, { headers: ['#', 'Step', 'Status'] }) : ui.text('No seed report yet. Run the pipeline to see step results.'),
+            ui.badge('Queued: ' + queueDepth),
+            running ? ui.badge('Executing ' + running + '\u2026') : ui.text('Idle'),
+            lastSeedAt
+              ? ui.text('Last completed: ' + lastSeedAt)
+              : ui.text('No seed runs yet. Click Run Seed Pipeline to populate the database with sample data.'),
+            steps.length > 0
+              ? ui.table(steps, { headers: ['#', 'Step', 'Status'] })
+              : ui.text('No seed report yet. Run the pipeline to see step results.'),
           ]);
         },
         handlers: {
-          runSeed({ dispatchDomainAction }) {
-            dispatchDomainAction('sqlite', 'seed.execute', { profile: 'people-v1' });
+          runSeed(context) {
+            dispatchSqlite(context, 'seed.execute', { profile: 'people-v1' });
           },
-          go({ dispatchSystemCommand }, args) {
-            dispatchSystemCommand('nav.go', { cardId: asString(asRecord(args).cardId, 'home') });
+          go(context, args) {
+            navigate(context, asRecord(args).cardId);
           },
-          back({ dispatchSystemCommand }) {
-            dispatchSystemCommand('nav.back');
+          back(context) {
+            goBack(context);
           },
         },
       },

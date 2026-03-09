@@ -35,8 +35,8 @@ export const SQLITE_STACK: CardStackDefinition = {
   plugin: {
     bundleCode: SQLITE_PLUGIN_BUNDLE,
     capabilities: {
-      domain: ['sqlite'],
-      system: ['nav.go', 'nav.back', 'notify', 'window.close'],
+      domain: ['sqlite', 'app_sqlite'],
+      system: ['nav.go', 'nav.back', 'notify.show'],
     },
   },
   cards: Object.fromEntries(SQLITE_CARD_META.map((card) => [card.id, toPluginCard(card)])),
