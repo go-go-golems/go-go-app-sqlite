@@ -13,7 +13,7 @@ import {
   type DesktopContribution,
   type WindowContentAdapter,
 } from '@hypercard/engine/desktop-react';
-import { PluginCardSessionHost } from '@hypercard/hypercard-runtime';
+import { RuntimeSurfaceSessionHost } from '@hypercard/hypercard-runtime';
 import type { ReactNode } from 'react';
 import { SqliteHypercardIntentRunner } from '../components/SqliteHypercardIntentRunner';
 import {
@@ -101,7 +101,7 @@ function createSqliteCardWindowAdapter(hostContext: LauncherHostContext): Window
       return (
         <>
           <SqliteHypercardIntentRunner apiBasePrefix={apiBasePrefix} />
-          <PluginCardSessionHost
+          <RuntimeSurfaceSessionHost
             windowId={window.id}
             sessionId={card.cardSessionId}
             stack={SQLITE_STACK}

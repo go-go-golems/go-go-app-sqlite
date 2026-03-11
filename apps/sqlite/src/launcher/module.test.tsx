@@ -3,7 +3,7 @@ import type { DesktopCommandContext } from '@hypercard/engine/desktop-react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@hypercard/hypercard-runtime', () => ({
-  PluginCardSessionHost: () => null,
+  RuntimeSurfaceSessionHost: () => null,
 }));
 vi.mock('../components/SqliteHypercardIntentRunner', () => ({
   SqliteHypercardIntentRunner: () => null,
