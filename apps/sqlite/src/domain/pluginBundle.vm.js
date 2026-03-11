@@ -100,6 +100,7 @@ defineRuntimeBundle(({ ui }) => {
   return {
     id: 'sqlite',
     title: 'SQLite',
+    packageIds: ["ui"],
     initialSurfaceState: {
       query: {
         sql: 'SELECT name FROM sqlite_master ORDER BY name LIMIT 20',

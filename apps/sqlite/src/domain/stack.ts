@@ -33,6 +33,7 @@ export const SQLITE_STACK: CardStackDefinition = {
   icon: 'DB',
   homeCard: 'home',
   plugin: {
+    packageIds: ['ui'],
     bundleCode: SQLITE_PLUGIN_BUNDLE,
     capabilities: {
       domain: ['sqlite', 'app_sqlite'],
