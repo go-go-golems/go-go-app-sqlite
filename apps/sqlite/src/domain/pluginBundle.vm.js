@@ -1,5 +1,5 @@
 // @ts-check
-defineStackBundle(({ ui }) => {
+defineRuntimeBundle(({ ui }) => {
   function asRecord(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   }
@@ -100,14 +100,14 @@ defineStackBundle(({ ui }) => {
   return {
     id: 'sqlite',
     title: 'SQLite',
-    initialCardState: {
+    initialSurfaceState: {
       query: {
         sql: 'SELECT name FROM sqlite_master ORDER BY name LIMIT 20',
         rowLimit: '20',
         paramsJSON: '',
       },
     },
-    cards: {
+    surfaces: {
       home: {
         render() {
           return ui.panel([
