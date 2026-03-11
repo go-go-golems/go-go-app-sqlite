@@ -16,6 +16,10 @@ function cloneState<S>(value: S): S {
   return JSON.parse(JSON.stringify(value)) as S;
 }
 
+export function createAction<P = unknown>(type: string) {
+  return (payload: P) => ({ type, payload });
+}
+
 export function createSlice<S>(options: SliceOptions<S>) {
   const ownCaseMap: Record<string, CaseReducer<S>> = {};
   for (const [name, reducer] of Object.entries(options.reducers)) {
