@@ -81,8 +81,8 @@ defineRuntimeBundle(({ ui }) => {
     context.dispatch({ type: 'draft.set', payload: { path, value } });
   }
 
-  function navigate(context, cardId) {
-    context.dispatch({ type: 'nav.go', payload: { cardId: toText(cardId, 'home') } });
+  function navigate(context, surfaceId) {
+    context.dispatch({ type: 'nav.go', payload: { surfaceId: toText(surfaceId, 'home') } });
   }
 
   function goBack(context) {
@@ -115,15 +115,15 @@ defineRuntimeBundle(({ ui }) => {
             ui.text('SQLite HyperCard Workspace'),
             ui.text('Use cards to run SQL, inspect results, and seed sample data.'),
             ui.row([
-              ui.button('Run Query Card', { onClick: { handler: 'go', args: { cardId: 'query' } } }),
-              ui.button('Results Card', { onClick: { handler: 'go', args: { cardId: 'results' } } }),
-              ui.button('Seed Card', { onClick: { handler: 'go', args: { cardId: 'seed' } } }),
+              ui.button('Run Query Surface', { onClick: { handler: 'go', args: { surfaceId: 'query' } } }),
+              ui.button('Results Surface', { onClick: { handler: 'go', args: { surfaceId: 'results' } } }),
+              ui.button('Seed Surface', { onClick: { handler: 'go', args: { surfaceId: 'seed' } } }),
             ]),
           ]);
         },
         handlers: {
           go(context, args) {
-            navigate(context, asRecord(args).cardId);
+            navigate(context, asRecord(args).surfaceId);
           },
         },
       },
@@ -150,7 +150,7 @@ defineRuntimeBundle(({ ui }) => {
             ]),
             ui.row([
               ui.button('Execute Query', { onClick: { handler: 'runQuery' } }),
-              ui.button('View Results', { onClick: { handler: 'go', args: { cardId: 'results' } } }),
+              ui.button('View Results', { onClick: { handler: 'go', args: { surfaceId: 'results' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
             ui.badge('Queued: ' + queueDepth),
@@ -186,7 +186,7 @@ defineRuntimeBundle(({ ui }) => {
             navigate(context, 'results');
           },
           go(context, args) {
-            navigate(context, asRecord(args).cardId);
+            navigate(context, asRecord(args).surfaceId);
           },
           back(context) {
             goBack(context);
@@ -213,14 +213,14 @@ defineRuntimeBundle(({ ui }) => {
               ui.text('Statement: ' + toText(meta.statementType, 'N/A')),
             ]),
             ui.row([
-              ui.button('Run Another Query', { onClick: { handler: 'go', args: { cardId: 'query' } } }),
+              ui.button('Run Another Query', { onClick: { handler: 'go', args: { surfaceId: 'query' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
           ]);
         },
         handlers: {
           go(context, args) {
-            navigate(context, asRecord(args).cardId);
+            navigate(context, asRecord(args).surfaceId);
           },
           back(context) {
             goBack(context);
@@ -246,7 +246,7 @@ defineRuntimeBundle(({ ui }) => {
             ui.text('Runs a deterministic sample seed pipeline through /query.'),
             ui.row([
               ui.button('Run Seed Pipeline', { onClick: { handler: 'runSeed' } }),
-              ui.button('Go To Query', { onClick: { handler: 'go', args: { cardId: 'query' } } }),
+              ui.button('Go To Query', { onClick: { handler: 'go', args: { surfaceId: 'query' } } }),
               ui.button('Back', { onClick: { handler: 'back' } }),
             ]),
             ui.badge('Queued: ' + queueDepth),
@@ -264,7 +264,7 @@ defineRuntimeBundle(({ ui }) => {
             dispatchSqlite(context, 'seed.execute', { profile: 'people-v1' });
           },
           go(context, args) {
-            navigate(context, asRecord(args).cardId);
+            navigate(context, asRecord(args).surfaceId);
           },
           back(context) {
             goBack(context);
