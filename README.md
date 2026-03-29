@@ -5,8 +5,8 @@ SQLite app workspace for the go-go / wesen-os stack.
 ## Scope
 
 - Go backend packages and command scaffolding for SQLite app services.
-- Frontend launcher module package `@hypercard/sqlite`.
-- Composition hooks into `wesen-os` launcher via `@hypercard/sqlite/launcher`.
+- Frontend launcher module package `@go-go-golems/sqlite`.
+- Composition hooks into `wesen-os` launcher via `@go-go-golems/sqlite/launcher`.
 
 ## Layout
 
@@ -18,8 +18,8 @@ SQLite app workspace for the go-go / wesen-os stack.
 
 `apps/sqlite/package.json` exports:
 
-- `@hypercard/sqlite`
-- `@hypercard/sqlite/launcher`
+- `@go-go-golems/sqlite`
+- `@go-go-golems/sqlite/launcher`
 
 ## Development
 

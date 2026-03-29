@@ -1,9 +1,9 @@
-import type { LauncherHostContext } from '@hypercard/desktop-os';
-import type { DesktopCommandContext } from '@hypercard/engine/desktop-react';
+import type { LauncherHostContext } from '@go-go-golems/os-shell';
+import type { DesktopCommandContext } from '@go-go-golems/os-core/desktop-react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@hypercard/hypercard-runtime', () => ({
-  PluginCardSessionHost: () => null,
+vi.mock('@go-go-golems/os-scripting', () => ({
+  RuntimeSurfaceSessionHost: () => null,
 }));
 vi.mock('../components/SqliteHypercardIntentRunner', () => ({
   SqliteHypercardIntentRunner: () => null,
@@ -28,26 +28,26 @@ function createCommandContext(): DesktopCommandContext {
     dispatch: vi.fn(),
     getState: vi.fn(() => ({})),
     focusedWindowId: null,
-    openCardWindow: vi.fn(),
+    openSurfaceWindow: vi.fn(),
     closeWindow: vi.fn(),
   };
 }
 
 describe('sqlite launcher contributions', () => {
-  it('builds sqlite card payload for known cards', () => {
+  it('builds sqlite surface payload for known surfaces', () => {
     const payload = buildSqliteCardWindowPayload('query');
     expect(payload).not.toBeNull();
-    if (!payload || payload.content.kind !== 'card' || !payload.content.card) return;
-    expect(payload.content.card.stackId).toBe(SQLITE_STACK.id);
-    expect(payload.content.card.cardId).toBe('query');
+    if (!payload || payload.content.kind !== 'surface' || !payload.content.surface) return;
+    expect(payload.content.surface.bundleId).toBe(SQLITE_STACK.id);
+    expect(payload.content.surface.surfaceId).toBe('query');
     expect(payload.dedupeKey).toBeUndefined();
   });
 
-  it('returns null for unknown card payload requests', () => {
+  it('returns null for unknown surface payload requests', () => {
     expect(buildSqliteCardWindowPayload('missing-card')).toBeNull();
   });
 
-  it('handles icon.open-new.sqlite by opening sqlite home card window', () => {
+  it('handles icon.open-new.sqlite by opening sqlite home surface window', () => {
     const host = createHostContext();
     const commandCtx = createCommandContext();
     const contributions = createSqliteContributions(host);
@@ -60,11 +60,11 @@ describe('sqlite launcher contributions', () => {
     expect(result).toBe('handled');
     expect(host.openWindow).toHaveBeenCalledTimes(1);
     const payload = (host.openWindow as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(payload.content.kind).toBe('card');
-    expect(payload.content.card.cardId).toBe(SQLITE_STACK.homeCard);
+    expect(payload.content.kind).toBe('surface');
+    expect(payload.content.surface.surfaceId).toBe(SQLITE_STACK.homeSurface);
   });
 
-  it('handles sqlite.card.open.<cardId> commands', () => {
+  it('handles sqlite.card.open.<surfaceId> commands', () => {
     const host = createHostContext();
     const commandCtx = createCommandContext();
     const contributions = createSqliteContributions(host);
@@ -77,10 +77,10 @@ describe('sqlite launcher contributions', () => {
     expect(result).toBe('handled');
     expect(host.openWindow).toHaveBeenCalledTimes(1);
     const payload = (host.openWindow as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(payload.content.card.cardId).toBe('results');
+    expect(payload.content.surface.surfaceId).toBe('results');
   });
 
-  it('registers card adapter for sqlite stack card windows', () => {
+  it('registers surface adapter for sqlite bundle surface windows', () => {
     const host = createHostContext();
     const contributions = createSqliteContributions(host);
     const adapters = contributions.flatMap((item) => item.windowContentAdapters ?? []);
@@ -96,8 +96,8 @@ describe('sqlite launcher contributions', () => {
       isDialog: false,
       isResizable: true,
       content: {
-        kind: 'card',
-        card: { stackId: SQLITE_STACK.id, cardId: 'home', cardSessionId: 'session-1' },
+        kind: 'surface',
+        surface: { bundleId: SQLITE_STACK.id, surfaceId: 'home', surfaceSessionId: 'session-1' },
       },
     } as any, { mode: 'interactive' } as any);
 
@@ -110,8 +110,8 @@ describe('sqlite launcher contributions', () => {
       isDialog: false,
       isResizable: true,
       content: {
-        kind: 'card',
-        card: { stackId: 'other', cardId: 'home', cardSessionId: 'session-2' },
+        kind: 'surface',
+        surface: { bundleId: 'other', surfaceId: 'home', surfaceSessionId: 'session-2' },
       },
     } as any, { mode: 'interactive' } as any);
 

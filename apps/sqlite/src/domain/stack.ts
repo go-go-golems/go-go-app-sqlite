@@ -1,4 +1,4 @@
-import type { CardDefinition, CardStackDefinition } from '@hypercard/engine';
+import type { RuntimeSurfaceMeta, RuntimeBundleDefinition } from '@go-go-golems/os-core';
 import { SQLITE_PLUGIN_BUNDLE } from './pluginBundle';
 
 interface SqliteCardMeta {
@@ -14,7 +14,7 @@ const SQLITE_CARD_META: SqliteCardMeta[] = [
   { id: 'seed', title: 'Seed Data', icon: 'S' },
 ];
 
-function toPluginCard(card: SqliteCardMeta): CardDefinition {
+function toPluginCard(card: SqliteCardMeta): RuntimeSurfaceMeta {
   return {
     id: card.id,
     type: 'plugin',
@@ -27,17 +27,18 @@ function toPluginCard(card: SqliteCardMeta): CardDefinition {
   };
 }
 
-export const SQLITE_STACK: CardStackDefinition = {
+export const SQLITE_STACK: RuntimeBundleDefinition = {
   id: 'sqlite',
   name: 'SQLite',
   icon: 'DB',
-  homeCard: 'home',
+  homeSurface: 'home',
   plugin: {
+    packageIds: ['ui'],
     bundleCode: SQLITE_PLUGIN_BUNDLE,
     capabilities: {
-      domain: ['sqlite'],
-      system: ['nav.go', 'nav.back', 'notify', 'window.close'],
+      domain: ['sqlite', 'app_sqlite'],
+      system: ['nav.go', 'nav.back', 'notify.show'],
     },
   },
-  cards: Object.fromEntries(SQLITE_CARD_META.map((card) => [card.id, toPluginCard(card)])),
+  surfaces: Object.fromEntries(SQLITE_CARD_META.map((card) => [card.id, toPluginCard(card)])),
 };

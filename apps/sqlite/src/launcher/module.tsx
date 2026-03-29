@@ -3,17 +3,17 @@ import {
   type LaunchableAppModule,
   type LaunchReason,
   type LauncherHostContext,
-} from '@hypercard/desktop-os';
+} from '@go-go-golems/os-shell';
 import {
   type OpenWindowPayload,
   type WindowInstance,
-} from '@hypercard/engine/desktop-core';
+} from '@go-go-golems/os-core/desktop-core';
 import {
   type DesktopCommandHandler,
   type DesktopContribution,
   type WindowContentAdapter,
-} from '@hypercard/engine/desktop-react';
-import { PluginCardSessionHost } from '@hypercard/hypercard-runtime';
+} from '@go-go-golems/os-core/desktop-react';
+import { RuntimeSurfaceSessionHost } from '@go-go-golems/os-scripting';
 import type { ReactNode } from 'react';
 import { SqliteHypercardIntentRunner } from '../components/SqliteHypercardIntentRunner';
 import {
@@ -60,29 +60,29 @@ function resolveCardBounds(cardId: string): OpenWindowPayload['bounds'] {
 }
 
 export function buildSqliteCardWindowPayload(
-  cardId: string,
+  surfaceId: string,
   options?: { dedupe?: boolean },
 ): OpenWindowPayload | null {
-  const card = SQLITE_STACK.cards[cardId];
-  if (!card) {
+  const surface = SQLITE_STACK.surfaces[surfaceId];
+  if (!surface) {
     return null;
   }
 
-  const sessionId = nextCardSessionId(cardId);
+  const sessionId = nextCardSessionId(surfaceId);
   return {
-    id: `window:${SQLITE_APP_ID}:card:${cardId}:${sessionId}`,
-    title: card.title ?? cardId,
-    icon: card.icon ?? 'DB',
-    bounds: resolveCardBounds(cardId),
+    id: `window:${SQLITE_APP_ID}:surface:${surfaceId}:${sessionId}`,
+    title: surface.title ?? surfaceId,
+    icon: surface.icon ?? 'DB',
+    bounds: resolveCardBounds(surfaceId),
     content: {
-      kind: 'card',
-      card: {
-        stackId: SQLITE_STACK.id,
-        cardId,
-        cardSessionId: sessionId,
+      kind: 'surface',
+      surface: {
+        bundleId: SQLITE_STACK.id,
+        surfaceId,
+        surfaceSessionId: sessionId,
       },
     },
-    dedupeKey: options?.dedupe ? `${SQLITE_APP_ID}:card:${cardId}` : undefined,
+    dedupeKey: options?.dedupe ? `${SQLITE_APP_ID}:surface:${surfaceId}` : undefined,
   };
 }
 
@@ -91,20 +91,20 @@ function createSqliteCardWindowAdapter(hostContext: LauncherHostContext): Window
   return {
     id: 'sqlite.hypercard.card-adapter',
     canRender: (window: WindowInstance) =>
-      window.content.kind === 'card' &&
-      window.content.card?.stackId === SQLITE_STACK.id,
+      window.content.kind === 'surface' &&
+      window.content.surface?.bundleId === SQLITE_STACK.id,
     render: (window: WindowInstance, ctx) => {
-      const card = window.content.kind === 'card' ? window.content.card : undefined;
-      if (!card?.cardSessionId) {
+      const card = window.content.kind === 'surface' ? window.content.surface : undefined;
+      if (!card?.surfaceSessionId) {
         return null;
       }
       return (
         <>
           <SqliteHypercardIntentRunner apiBasePrefix={apiBasePrefix} />
-          <PluginCardSessionHost
+          <RuntimeSurfaceSessionHost
             windowId={window.id}
-            sessionId={card.cardSessionId}
-            stack={SQLITE_STACK}
+            sessionId={card.surfaceSessionId}
+            bundle={SQLITE_STACK}
             mode={ctx.mode}
           />
         </>
@@ -117,8 +117,8 @@ function parseCardIdFromCommand(commandId: string): string | null {
   if (!commandId.startsWith(SQLITE_CARD_COMMAND_PREFIX)) {
     return null;
   }
-  const cardId = commandId.slice(SQLITE_CARD_COMMAND_PREFIX.length).trim();
-  return cardId.length > 0 ? cardId : null;
+  const surfaceId = commandId.slice(SQLITE_CARD_COMMAND_PREFIX.length).trim();
+  return surfaceId.length > 0 ? surfaceId : null;
 }
 
 function createSqliteCommandHandlers(hostContext: LauncherHostContext): DesktopCommandHandler[] {
@@ -128,7 +128,7 @@ function createSqliteCommandHandlers(hostContext: LauncherHostContext): DesktopC
       priority: 120,
       matches: (commandId) => commandId === `icon.open-new.${SQLITE_APP_ID}`,
       run: () => {
-        const payload = buildSqliteCardWindowPayload(SQLITE_STACK.homeCard);
+        const payload = buildSqliteCardWindowPayload(SQLITE_STACK.homeSurface);
         if (!payload) {
           return 'pass';
         }
@@ -141,11 +141,11 @@ function createSqliteCommandHandlers(hostContext: LauncherHostContext): DesktopC
       priority: 110,
       matches: (commandId) => parseCardIdFromCommand(commandId) !== null,
       run: (commandId) => {
-        const cardId = parseCardIdFromCommand(commandId);
-        if (!cardId) {
+        const surfaceId = parseCardIdFromCommand(commandId);
+        if (!surfaceId) {
           return 'pass';
         }
-        const payload = buildSqliteCardWindowPayload(cardId);
+        const payload = buildSqliteCardWindowPayload(surfaceId);
         if (!payload) {
           return 'pass';
         }
@@ -173,17 +173,17 @@ export function createSqliteContributions(hostContext: LauncherHostContext): Des
             {
               id: 'sqlite-open-home-card',
               label: 'Open Card Home',
-              commandId: `${SQLITE_CARD_COMMAND_PREFIX}${SQLITE_STACK.homeCard}`,
+              commandId: `${SQLITE_CARD_COMMAND_PREFIX}${SQLITE_STACK.homeSurface}`,
             },
           ],
         },
         {
           id: 'sqlite-cards',
           label: 'SQLite Cards',
-          items: Object.keys(SQLITE_STACK.cards).map((cardId) => ({
-            id: `sqlite-open-card-${cardId}`,
-            label: `${SQLITE_STACK.cards[cardId].icon ?? ''} ${SQLITE_STACK.cards[cardId].title ?? cardId}`.trim(),
-            commandId: `${SQLITE_CARD_COMMAND_PREFIX}${cardId}`,
+          items: Object.keys(SQLITE_STACK.surfaces).map((surfaceId) => ({
+            id: `sqlite-open-surface-${surfaceId}`,
+            label: `${SQLITE_STACK.surfaces[surfaceId].icon ?? ''} ${SQLITE_STACK.surfaces[surfaceId].title ?? surfaceId}`.trim(),
+            commandId: `${SQLITE_CARD_COMMAND_PREFIX}${surfaceId}`,
           })),
         },
       ],

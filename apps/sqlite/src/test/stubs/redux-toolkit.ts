@@ -1,11 +1,12 @@
 type CaseReducer<S> = (state: S, action: { type: string; payload?: unknown }) => void;
+type ActionCreator<P = unknown> = ((payload: P) => { type: string; payload: P }) & { type: string };
 
 interface SliceOptions<S> {
   name: string;
   initialState: S;
   reducers: Record<string, CaseReducer<S>>;
   extraReducers?: (builder: {
-    addCase: (type: string, reducer: CaseReducer<S>) => void;
+    addCase: (type: string | ActionCreator, reducer: CaseReducer<S>) => void;
   }) => void;
 }
 
@@ -14,6 +15,12 @@ function cloneState<S>(value: S): S {
     return structuredClone(value);
   }
   return JSON.parse(JSON.stringify(value)) as S;
+}
+
+export function createAction<P = unknown>(type: string): ActionCreator<P> {
+  const actionCreator = ((payload: P) => ({ type, payload })) as ActionCreator<P>;
+  actionCreator.type = type;
+  return actionCreator;
 }
 
 export function createSlice<S>(options: SliceOptions<S>) {
@@ -26,7 +33,11 @@ export function createSlice<S>(options: SliceOptions<S>) {
   if (options.extraReducers) {
     options.extraReducers({
       addCase(type, reducer) {
-        extraCaseMap[String(type)] = reducer;
+        const actionType =
+          typeof type === 'function' && typeof (type as ActionCreator).type === 'string'
+            ? (type as ActionCreator).type
+            : String(type);
+        extraCaseMap[actionType] = reducer;
       },
     });
   }
