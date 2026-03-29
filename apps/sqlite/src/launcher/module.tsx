@@ -3,17 +3,17 @@ import {
   type LaunchableAppModule,
   type LaunchReason,
   type LauncherHostContext,
-} from '@hypercard/desktop-os';
+} from '@go-go-golems/os-shell';
 import {
   type OpenWindowPayload,
   type WindowInstance,
-} from '@hypercard/engine/desktop-core';
+} from '@go-go-golems/os-core/desktop-core';
 import {
   type DesktopCommandHandler,
   type DesktopContribution,
   type WindowContentAdapter,
-} from '@hypercard/engine/desktop-react';
-import { RuntimeSurfaceSessionHost } from '@hypercard/hypercard-runtime';
+} from '@go-go-golems/os-core/desktop-react';
+import { RuntimeSurfaceSessionHost } from '@go-go-golems/os-scripting';
 import type { ReactNode } from 'react';
 import { SqliteHypercardIntentRunner } from '../components/SqliteHypercardIntentRunner';
 import {

@@ -40,7 +40,7 @@ Think of `go-go-app-sqlite` as a reference-quality "full app module" in go-go-os
 `go-go-app-sqlite` is a split-repo app module that provides:
 
 - A Go backend runtime and HTTP API under `/api/apps/sqlite/*`.
-- A frontend launcher module (`@hypercard/sqlite/launcher`) that renders the SQLite workspace window.
+- A frontend launcher module (`@go-go-golems/sqlite/launcher`) that renders the SQLite workspace window.
 - HyperCard intent bridge helpers so card/runtime flows can execute queries through the same policy path.
 
 The implementation is intentionally layered so each part can be tested in isolation.

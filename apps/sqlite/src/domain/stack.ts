@@ -1,4 +1,4 @@
-import type { RuntimeSurfaceMeta, RuntimeBundleDefinition } from '@hypercard/engine';
+import type { RuntimeSurfaceMeta, RuntimeBundleDefinition } from '@go-go-golems/os-core';
 import { SQLITE_PLUGIN_BUNDLE } from './pluginBundle';
 
 interface SqliteCardMeta {

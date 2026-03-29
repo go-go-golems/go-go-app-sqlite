@@ -1,8 +1,8 @@
-import type { LauncherHostContext } from '@hypercard/desktop-os';
-import type { DesktopCommandContext } from '@hypercard/engine/desktop-react';
+import type { LauncherHostContext } from '@go-go-golems/os-shell';
+import type { DesktopCommandContext } from '@go-go-golems/os-core/desktop-react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@hypercard/hypercard-runtime', () => ({
+vi.mock('@go-go-golems/os-scripting', () => ({
   RuntimeSurfaceSessionHost: () => null,
 }));
 vi.mock('../components/SqliteHypercardIntentRunner', () => ({

@@ -1,4 +1,4 @@
-import type { LaunchReason } from '@hypercard/desktop-os';
+import type { LaunchReason } from '@go-go-golems/os-shell';
 import { createAction, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type {
   SqliteQueryIntentPayload,
