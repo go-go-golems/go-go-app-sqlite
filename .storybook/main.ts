@@ -21,9 +21,9 @@ const config: StorybookConfig = {
     config_.resolve = config_.resolve || {};
     config_.resolve.alias = {
       ...config_.resolve.alias,
-      '@hypercard/engine': resolve(workspaceRoot, 'go-go-os-frontend/packages/engine/src'),
-      '@hypercard/desktop-os': resolve(workspaceRoot, 'go-go-os-frontend/packages/desktop-os/src'),
-      '@hypercard/hypercard-runtime': resolve(workspaceRoot, 'go-go-os-frontend/packages/hypercard-runtime/src'),
+      '@go-go-golems/os-core': resolve(workspaceRoot, 'go-go-os-frontend/packages/os-core/src'),
+      '@go-go-golems/os-shell': resolve(workspaceRoot, 'go-go-os-frontend/packages/os-shell/src'),
+      '@go-go-golems/os-scripting': resolve(workspaceRoot, 'go-go-os-frontend/packages/os-scripting/src'),
     };
     return config_;
   },

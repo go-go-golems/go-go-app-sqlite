@@ -1,7 +1,7 @@
 import type { Preview } from '@storybook/react';
 import React from 'react';
-import { HyperCardTheme } from '@hypercard/engine';
-import '@hypercard/engine/theme';
+import { HyperCardTheme } from '@go-go-golems/os-core';
+import '@go-go-golems/os-core/theme';
 
 const preview: Preview = {
   decorators: [(Story) => React.createElement(HyperCardTheme, null, React.createElement(Story))],

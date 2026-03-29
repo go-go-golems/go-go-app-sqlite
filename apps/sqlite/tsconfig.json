@@ -9,19 +9,19 @@
     "outDir": "dist",
     "skipLibCheck": true,
     "paths": {
-      "@go-go-golems/os-shell": ["../../../go-go-os-frontend/packages/desktop-os/src"],
-      "@go-go-golems/os-shell/*": ["../../../go-go-os-frontend/packages/desktop-os/src/*"],
-      "@go-go-golems/os-core": ["../../../go-go-os-frontend/packages/engine/src"],
-      "@go-go-golems/os-core/*": ["../../../go-go-os-frontend/packages/engine/src/*"],
-      "@go-go-golems/os-scripting": ["../../../go-go-os-frontend/packages/hypercard-runtime/src"],
-      "@go-go-golems/os-scripting/*": ["../../../go-go-os-frontend/packages/hypercard-runtime/src/*"]
+      "@go-go-golems/os-shell": ["../../../go-go-os-frontend/packages/os-shell/src"],
+      "@go-go-golems/os-shell/*": ["../../../go-go-os-frontend/packages/os-shell/src/*"],
+      "@go-go-golems/os-core": ["../../../go-go-os-frontend/packages/os-core/src"],
+      "@go-go-golems/os-core/*": ["../../../go-go-os-frontend/packages/os-core/src/*"],
+      "@go-go-golems/os-scripting": ["../../../go-go-os-frontend/packages/os-scripting/src"],
+      "@go-go-golems/os-scripting/*": ["../../../go-go-os-frontend/packages/os-scripting/src/*"]
     }
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
   "references": [
-    { "path": "../../../go-go-os-frontend/packages/desktop-os" },
-    { "path": "../../../go-go-os-frontend/packages/engine" },
-    { "path": "../../../go-go-os-frontend/packages/hypercard-runtime" }
+    { "path": "../../../go-go-os-frontend/packages/os-shell" },
+    { "path": "../../../go-go-os-frontend/packages/os-core" },
+    { "path": "../../../go-go-os-frontend/packages/os-scripting" }
   ]
 }
