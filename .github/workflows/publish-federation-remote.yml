@@ -43,7 +43,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: go-go-golems/infra-tooling
-          ref: task/federation-publish-helper
           path: .infra-tooling
 
       - name: Checkout GitOps repo for dry-run validation
