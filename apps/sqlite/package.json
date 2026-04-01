@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./host": "./src/host.ts",
     "./launcher": "./src/launcher/public.ts"
   },
   "main": "./src/index.ts",
@@ -14,7 +15,8 @@
     "build": "npm run typecheck && vite build",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -b",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:federation": "vite build --config vite.federation.config.ts"
   },
   "dependencies": {
     "@go-go-golems/os-shell": "workspace:*",
