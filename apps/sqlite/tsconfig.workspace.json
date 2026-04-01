@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@go-go-golems/os-shell": ["../../../go-go-os-frontend/packages/os-shell/src"],
+      "@go-go-golems/os-shell/*": ["../../../go-go-os-frontend/packages/os-shell/src/*"],
+      "@go-go-golems/os-core": ["../../../go-go-os-frontend/packages/os-core/src"],
+      "@go-go-golems/os-core/*": ["../../../go-go-os-frontend/packages/os-core/src/*"],
+      "@go-go-golems/os-scripting": ["../../../go-go-os-frontend/packages/os-scripting/src"],
+      "@go-go-golems/os-scripting/*": ["../../../go-go-os-frontend/packages/os-scripting/src/*"]
+    }
+  },
+  "references": [
+    { "path": "../../../go-go-os-frontend/packages/os-shell" },
+    { "path": "../../../go-go-os-frontend/packages/os-core" },
+    { "path": "../../../go-go-os-frontend/packages/os-scripting" }
+  ]
+}
