@@ -13,7 +13,8 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
-    "typecheck": "node ../../node_modules/typescript/bin/tsc -b",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -b tsconfig.workspace.json",
+    "typecheck:published": "tsc --noEmit -p tsconfig.published.json",
     "preview": "vite preview",
     "test": "vitest run",
     "build:federation": "vite build --config vite.federation.config.ts"
